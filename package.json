@@ -1,0 +1,19 @@
+{
+  "name": "post-integration-system",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Multi-SNS posting SaaS monorepo",
+  "scripts": {
+    "dev": "pnpm --filter web dev",
+    "dev:web": "pnpm --filter web dev",
+    "dev:ext": "pnpm --filter extension dev",
+    "build": "pnpm -r --if-present build",
+    "lint": "pnpm -r --if-present lint",
+    "typecheck": "pnpm -r --if-present typecheck"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.12.0"
+}
