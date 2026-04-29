@@ -371,9 +371,63 @@ fetch('/api/posts', {
 - 本コードでは `maxDuration = 60` を指定済（route.ts）
 - リトライが多発するとタイムアウトの可能性、その場合は Phase 7 でキュー化（BullMQ等）検討
 
+## Chrome 拡張機能（Phase 5-1）
+
+### 1. 拡張機能のビルド
+```powershell
+cd "c:\Users\iwaiy\OneDrive\デスクトップ\業務効率化システム\水商売システム\投稿一括統合システム"
+pnpm --filter extension build
+```
+→ `apps/extension/dist/` に拡張機能のビルド成果物が出力される。
+
+### 2. Chrome に開発者モードでロード
+1. Chrome / Edge で `chrome://extensions/`（Edge は `edge://extensions/`）を開く
+2. 右上の「**デベロッパーモード**」を ON
+3. 左上の「**パッケージ化されていない拡張機能を読み込む**」をクリック
+4. ファイル選択で `apps/extension/dist/` フォルダを選択
+5. 拡張機能一覧に「**投稿一括統合システム**」が追加される
+6. 「**ID: xxxxxxxxx**」（32文字の英字）をコピー → メモ帳に保存（後で使う）
+
+### 3. ポップアップ表示確認
+1. ブラウザのツールバーで拡張機能アイコン（パズルピース）をクリック
+2. 「投稿一括統合システム」のアイコンをピン留め（任意）→ クリック
+3. ポップアップが開いて以下が表示される：
+   - **未接続**（赤背景）
+   - Extension ID
+   - 最終接続: 未受信
+   - 最終接続元: 未受信
+
+### 4. Web アプリから ping を送信して接続テスト
+1. http://localhost:3000 を開く（Web アプリの dev サーバーが動いている前提）
+2. F12 で DevTools → **Console**
+3. 以下を貼り付け（**`<EXT_ID>` を 2 でコピーした拡張 ID に置換**）:
+
+```js
+chrome.runtime.sendMessage(
+  '<EXT_ID>',
+  { type: 'ping' },
+  (response) => console.log('pong response:', response)
+);
+```
+
+**期待結果**: Console に
+```js
+pong response: { type: "pong", extensionId: "xxxx...", receivedAt: "2026-..." }
+```
+
+5. 拡張機能のポップアップを再度開く → 「**Webアプリと接続中**」（緑背景）+ タイムスタンプ表示 ✅ **Done 条件達成**
+
+### 5. 接続テストの再実行
+ポップアップの状態は ping を受けるたびに更新されます。Console で何度でも実行可能。
+
+### 注意点
+- **拡張機能のリロード**: コード変更後は `chrome://extensions/` で「↻ リロード」ボタン
+- **背景 Service Worker のログ**: `chrome://extensions/` → 拡張機能の「**サービスワーカー**」リンクをクリック → DevTools が開く
+- **externally_connectable のオリジン**: 現状 `localhost:3000` と Vercel 本番のみ許可。他のオリジンからは無視される
+
 ## 注意
 
-- 本リポジトリは Phase 4-3（投稿API統合）の状態。
-- Chrome拡張機能配信 / Instagram / Sentry / 課金制限 は未設定。後続フェーズで追加予定。
+- 本リポジトリは Phase 5-1（拡張スケルトン）の状態。
+- 業界SNS DOM操作 / セレクタ動的取得 / 投稿UI / Sentry / 課金制限 は未設定。後続フェーズで追加予定。
 #   S N S -  
  

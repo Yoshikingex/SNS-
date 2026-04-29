@@ -3,10 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <title>投稿一括統合システム</title>
+    <link rel="stylesheet" href="./popup.css" />
   </head>
-  <body style="min-width: 240px; padding: 12px; font-family: sans-serif;">
-    <h1 style="font-size: 16px; margin: 0;">Hello</h1>
-    <p style="font-size: 12px; color: #666;">Extension skeleton</p>
+  <body>
+    <h1 class="title">投稿一括統合システム</h1>
+    <div id="status" class="status status-pending">読み込み中...</div>
+    <div class="meta">
+      <p>Extension ID:<br /><code id="ext-id">-</code></p>
+      <p>最終接続:<br /><code id="last-ping">-</code></p>
+      <p>最終接続元:<br /><code id="last-origin">-</code></p>
+    </div>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>
