@@ -9,7 +9,8 @@
     "dev:ext": "pnpm --filter extension dev",
     "build": "pnpm -r --if-present build",
     "lint": "pnpm -r --if-present lint",
-    "typecheck": "pnpm -r --if-present typecheck"
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test"
   },
   "engines": {
     "node": ">=20.0.0",

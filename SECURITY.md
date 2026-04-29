@@ -52,6 +52,18 @@
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase API エンドポイント | Vercel 環境変数 / `.env.local` | あり（NEXT_PUBLIC_）| 不要 | [REDACTED] |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase 匿名キー（RLS 必須） | Vercel 環境変数 / `.env.local` | あり（NEXT_PUBLIC_）| 90日 | [REDACTED] |
 | `SUPABASE_SERVICE_ROLE_KEY` | サーバ側管理用（RLS バイパス） | Vercel 環境変数のみ（**`.env.local` も最小限**）| **絶対露出禁止** | 90日 | [REDACTED] |
+| `ENCRYPTION_KEY` | AES-256-GCM 暗号化鍵（SNS資格情報のDB保存用 / Phase 3 以降） | Vercel 環境変数のみ | **絶対露出禁止** | 180日 | [REDACTED] |
+
+### ENCRYPTION_KEY の生成方法
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+出力された 44文字（Base64）の値を `ENCRYPTION_KEY` に設定。
+
+### ENCRYPTION_KEY のローテーション方針（Phase 3 以降で運用開始）
+- 鍵を変更する前に既存暗号文をすべて旧鍵で復号 → 新鍵で再暗号化 → DB 更新
+- 鍵ローテーション中は短時間のメンテナンスウィンドウを設ける
+- 詳細手順は Phase 7 のランブックで策定予定
 
 ### 鍵取り扱い原則
 - **値は本ドキュメントには一切記載しない**（`[REDACTED]` のみ）
