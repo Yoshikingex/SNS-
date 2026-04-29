@@ -57,6 +57,7 @@
 | `X_CLIENT_SECRET` | X (Twitter) OAuth2 Client Secret | Vercel 環境変数のみ | **絶対露出禁止** | アプリ削除時のみ | [REDACTED] |
 | `X_REDIRECT_URI` | OAuth2 callback URL（X Developer Portal と一致必須） | Vercel 環境変数 / `.env.local` | URL のみ（機密性低） | 不要 | - |
 | ユーザー個別 access_token / refresh_token | X 投稿用 OAuth2 トークン | `sns_accounts.encrypted_credentials`（AES-256-GCM 暗号化済） | **平文露出禁止** | refresh_token で自動更新 | システム |
+| ユーザー個別 Bluesky AppPassword | Bluesky 投稿用認証 | `sns_accounts.encrypted_credentials`（AES-256-GCM 暗号化済 / identifier+app_password を JSON で） | **平文露出禁止** | ユーザーが Bluesky 側で revoke + 再連携 | ユーザー本人 |
 
 ### ENCRYPTION_KEY の生成方法
 ```bash

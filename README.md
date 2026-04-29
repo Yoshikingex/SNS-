@@ -226,9 +226,61 @@ fetch('/api/post/x', {
 
 詳細仕様は [SECURITY.md](SECURITY.md) を参照。
 
+## Bluesky 連携と投稿（Phase 4-2）
+
+### 1. Bluesky で AppPassword を発行
+1. Bluesky アプリ or Web (https://bsky.app) でログイン
+2. **Settings** → **Privacy and Security** → **App Passwords**
+3. 「**Add App Password**」をクリック
+4. 名前を入力（例: `post-integration-system`）
+5. 「**Create**」 → 表示された AppPassword を**コピー**（**1度しか表示されません**）
+
+### 2. アプリで連携
+1. http://localhost:3000/settings/connections を開く
+2. 「Bluesky」セクションのフォームに入力:
+   - **Identifier**: あなたの Bluesky handle（例: `alice.bsky.social`）
+   - **AppPassword**: 上記 1 でコピーした値
+3. 「**Blueskyと連携**」をクリック
+4. 成功すると「連携済み: @<handle>」表示
+
+### 3. 投稿テスト（DevTools Console）
+```js
+fetch('/api/post/bluesky', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    text: 'Hello from 投稿一括統合システム! ' + new Date().toISOString()
+  })
+}).then(r => r.json()).then(console.log);
+```
+
+→ レスポンスに `{ uri, cid, webUrl }` が返れば投稿成功 ✅
+→ webUrl をブラウザで開いて Bluesky 上の投稿を目視確認
+
+### 4. 画像付き投稿
+```js
+fetch('/api/post/bluesky', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    text: '画像テスト',
+    image_url: 'https://picsum.photos/600/400'
+  })
+}).then(r => r.json()).then(console.log);
+```
+
+### 文字数制限
+- Bluesky は **300 grapheme**（実描画文字単位、絵文字や日本語含む）
+- 超えると 500 エラー: `Bluesky text exceeds 300 graphemes`
+
+### Bluesky の利点（X との比較）
+- ✅ **完全無料**（課金不要）
+- ✅ Developer Portal 不要（AppPassword だけ）
+- ✅ レート制限緩い（個人利用には実質無制限）
+
 ## 注意
 
-- 本リポジトリは Phase 4-1（X API 投稿実装）の状態。
-- Bluesky実装 / 投稿API統合 / Chrome拡張機能配信 / Sentry は未設定。後続フェーズで追加予定。
+- 本リポジトリは Phase 4-2（X + Bluesky 投稿実装）の状態。
+- 投稿API統合 / Chrome拡張機能配信 / Instagram / Sentry は未設定。後続フェーズで追加予定。
 #   S N S -  
  
