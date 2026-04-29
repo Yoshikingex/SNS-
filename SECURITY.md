@@ -53,6 +53,10 @@
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase 匿名キー（RLS 必須） | Vercel 環境変数 / `.env.local` | あり（NEXT_PUBLIC_）| 90日 | [REDACTED] |
 | `SUPABASE_SERVICE_ROLE_KEY` | サーバ側管理用（RLS バイパス） | Vercel 環境変数のみ（**`.env.local` も最小限**）| **絶対露出禁止** | 90日 | [REDACTED] |
 | `ENCRYPTION_KEY` | AES-256-GCM 暗号化鍵（SNS資格情報のDB保存用 / Phase 3 以降） | Vercel 環境変数のみ | **絶対露出禁止** | 180日 | [REDACTED] |
+| `X_CLIENT_ID` | X (Twitter) OAuth2 Client ID | Vercel 環境変数 / `.env.local` | サーバ側のみ参照 | アプリ削除時のみ | [REDACTED] |
+| `X_CLIENT_SECRET` | X (Twitter) OAuth2 Client Secret | Vercel 環境変数のみ | **絶対露出禁止** | アプリ削除時のみ | [REDACTED] |
+| `X_REDIRECT_URI` | OAuth2 callback URL（X Developer Portal と一致必須） | Vercel 環境変数 / `.env.local` | URL のみ（機密性低） | 不要 | - |
+| ユーザー個別 access_token / refresh_token | X 投稿用 OAuth2 トークン | `sns_accounts.encrypted_credentials`（AES-256-GCM 暗号化済） | **平文露出禁止** | refresh_token で自動更新 | システム |
 
 ### ENCRYPTION_KEY の生成方法
 ```bash
