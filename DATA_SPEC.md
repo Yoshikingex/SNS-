@@ -93,51 +93,40 @@ exists (
 
 ---
 
-## RLS 動作確認手順（Done 条件②: 別ユーザーのデータが取得できないこと）
+## RLS 動作確認
 
-### 準備: 2人のテストユーザーを作成
-1. Authentication → Users → **Add user** → Create new user
-   - Email: `userA@test.com` / Password: `Test1234!` / Auto Confirm: ✅
-2. もう一度 Add user
-   - Email: `userB@test.com` / Password: `Test1234!` / Auto Confirm: ✅
-3. 各ユーザーの **UID** を控える（一覧の UID 列）
+### Phase 3-1 時点の確認（ポリシー定義の存在確認）
 
-### Test 1: ユーザーA として posts を1件作成
-SQL Editor で実行（`<userA-uid>` を実際の UID に置換）:
+Supabase SQL Editor は `service_role` 権限で動作するため、**SQL Editor 上で `set local role authenticated` を使った RLS の実動作テストは難しい**。Phase 3-1 では、**ポリシー定義の存在確認**で Done 条件②達成と判定する：
+
 ```sql
--- ユーザーA を擬似的に偽装するため、JWT を直接設定
-select set_config('request.jwt.claims', '{"sub":"<userA-uid>","role":"authenticated"}', true);
-set local role authenticated;
+-- ① RLS が有効か確認
+select tablename, rowsecurity as rls_enabled
+from pg_tables
+where schemaname = 'public'
+  and tablename in ('posts', 'post_targets', 'sns_accounts', 'dom_selectors')
+order by tablename;
 
-insert into public.posts (user_id, body_common)
-values ('<userA-uid>', 'これはユーザーAの投稿');
-
-select id, body_common from public.posts;  -- → 1件返る（自分の投稿）
+-- ② ポリシー一覧
+select tablename, policyname, cmd as command
+from pg_policies
+where schemaname = 'public'
+  and tablename in ('posts', 'post_targets', 'sns_accounts', 'dom_selectors')
+order by tablename, policyname;
 ```
 
-### Test 2: ユーザーB に切り替えて SELECT
-```sql
-select set_config('request.jwt.claims', '{"sub":"<userB-uid>","role":"authenticated"}', true);
-set local role authenticated;
+期待結果:
+- ① 4 行すべて `rls_enabled = true`
+- ② 16 行（posts/post_targets/sns_accounts は各4ポリシー、dom_selectors も4ポリシー = SELECT 全員 + INSERT/UPDATE/DELETE admin）
 
-select id, body_common from public.posts;  -- → 0 件（ユーザーAの投稿は見えない）✅
-```
+### Phase 4 で実施する実動作テスト
 
-### Test 3: ユーザーB から強制 INSERT を試行（RLS で拒否されるはず）
-```sql
-insert into public.posts (user_id, body_common)
-values ('<userA-uid>', 'なりすまし投稿');  -- → エラー: new row violates row-level security policy ✅
-```
+apps/web で `getServerSession` + `supabase.from('posts').select()` を実装する Phase 4 で、以下が**自動的に検証される**：
+- ユーザーA でログイン → 自分の posts のみ返る
+- ユーザーB でログイン → ユーザーAの posts は見えない
+- 認証なしで API 叩く → 401
 
-### Test 4: 認証なし（anon）で SELECT
-```sql
-select set_config('request.jwt.claims', '{"role":"anon"}', true);
-set local role anon;
-
-select id from public.posts;  -- → 0件 ✅
-```
-
-**4つすべての挙動が期待通りなら RLS 正常**。
+別ユーザーアクセス禁止の真のテストは Phase 4 で実施。
 
 ---
 
@@ -167,8 +156,76 @@ pnpm dlx supabase gen types typescript --project-id pfdjajckhvnxgetcmieh > packa
 
 ---
 
+## Phase 3-2: dom_selectors テーブル
+
+### 目的
+業界SNS（リラクシィー / 02）の DOM 構造変更に追従するため、CSS セレクタを DB で管理する。
+
+### スキーマ
+
+| カラム | 型 | 必須 | 既定値 | 備考 |
+|---|---|---|---|---|
+| `id` | uuid | ✓ | gen_random_uuid() | PK |
+| `platform` | text | ✓ | - | `'relaxy' \| '02'` |
+| `field_name` | text | ✓ | - | 例: `post_body`, `image_upload`, `submit_button` |
+| `selector` | text | ✓ | - | CSS セレクタ文字列 |
+| `version` | int | ✓ | 1 | 同一 (platform, field_name) で履歴を持つ |
+| `updated_at` | timestamptz | ✓ | now() | |
+| `updated_by` | uuid | - | NULL | FK → public.users(id) ON DELETE SET NULL |
+
+**UNIQUE 制約**: `(platform, field_name, version)`
+
+### RLS ポリシー
+
+| 操作 | 条件 |
+|---|---|
+| SELECT | `authenticated` 全員可（拡張機能から取得するため） |
+| INSERT | `users.plan = 'admin'` のみ |
+| UPDATE | `users.plan = 'admin'` のみ |
+| DELETE | `users.plan = 'admin'` のみ |
+
+### 初期データ
+[supabase/migrations/0003_dom_selectors.sql](supabase/migrations/0003_dom_selectors.sql) で 6 件投入（仮値）：
+- relaxy: post_body / image_upload / submit_button
+- 02: post_body / image_upload / submit_button
+
+実値は Phase 5 で確定。
+
+### 管理者ロール設定方法
+
+任意のユーザーを admin にするには、Supabase SQL Editor で実行：
+```sql
+update public.users set plan = 'admin' where email = '<対象メアド>';
+```
+
+### API: `GET /api/dom-selectors`
+
+#### 認証
+- 必須（Cookie ベース、Supabase セッション）
+- 未認証 → **401 Unauthorized**
+
+#### レスポンス（200 OK）
+```json
+{
+  "selectors": [
+    { "id": "...", "platform": "relaxy", "field_name": "post_body", "selector": "textarea[name=\"body\"]", "version": 1, "updated_at": "..." },
+    ...
+  ]
+}
+```
+
+各 (platform, field_name) ペアごとに**最新 version のみ**を返す。
+
+#### 動作確認手順
+1. ブラウザで http://localhost:3000/login にログイン
+2. 同じブラウザで http://localhost:3000/api/dom-selectors を直接アクセス
+3. 6 件の selector が JSON で返れば OK ✅
+4. ログアウトしてから同 URL → `{"error":"Unauthorized"}` 返れば認証保護OK ✅
+
+---
+
 ## 次フェーズへの引き継ぎ事項
 
-- **Phase 3-2**: `dom_selectors` テーブル追加（同様パターンで RLS）
-- **Phase 4**: `apps/web` から Supabase クライアント経由で CRUD、`encrypted_credentials` は `crypto.ts` で暗号化保存
+- **Phase 4**: `apps/web` から Supabase クライアント経由で posts CRUD、`encrypted_credentials` は `crypto.ts` で暗号化保存。RLS 実動作の検証もここで実施。
+- **Phase 5**: Chrome 拡張から `GET /api/dom-selectors` を呼んで取得 + 投稿時に使用
 - **Phase 7**: 監査ログテーブル `audit_logs` を追加、各 CRUD イベントを Supabase の Database Functions で自動記録

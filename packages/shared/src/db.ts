@@ -51,6 +51,18 @@ export type SnsAccountRow = {
   is_active: boolean;
 };
 
+export type DomSelectorPlatform = "relaxy" | "02";
+
+export type DomSelectorRow = {
+  id: string;
+  platform: DomSelectorPlatform;
+  field_name: string;
+  selector: string;
+  version: number;
+  updated_at: string;
+  updated_by: string | null;
+};
+
 // ---- Insert 型（必須項目のみ、デフォルト値があるものは省略可） ----
 
 export type PostInsert = {
@@ -77,6 +89,14 @@ export type SnsAccountInsert = {
   is_active?: boolean;
 };
 
+export type DomSelectorInsert = {
+  platform: DomSelectorPlatform;
+  field_name: string;
+  selector: string;
+  version?: number;
+  updated_by?: string | null;
+};
+
 // ---- Database 型（@supabase/supabase-js のジェネリクス互換） ----
 
 export type Database = {
@@ -101,6 +121,11 @@ export type Database = {
         Row: SnsAccountRow;
         Insert: SnsAccountInsert;
         Update: Partial<SnsAccountInsert>;
+      };
+      dom_selectors: {
+        Row: DomSelectorRow;
+        Insert: DomSelectorInsert;
+        Update: Partial<DomSelectorInsert>;
       };
     };
   };
