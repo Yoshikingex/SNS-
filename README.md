@@ -278,9 +278,102 @@ fetch('/api/post/bluesky', {
 - ✅ Developer Portal 不要（AppPassword だけ）
 - ✅ レート制限緩い（個人利用には実質無制限）
 
+## 統合投稿 API（Phase 4-3）
+
+### 仕様
+**`POST /api/posts`**: 複数 SNS に同時投稿（API系は即時、拡張系は pending）
+
+#### リクエスト
+```json
+{
+  "body_common": "投稿本文",
+  "images": [{ "url": "https://...", "width": 600, "height": 400 }],
+  "target_platforms": ["x", "bluesky", "relaxy", "02"]
+}
+```
+
+- `body_common` (必須): 投稿本文
+- `images` (任意): 画像配列、各要素は `{url, width, height}`
+- `target_platforms` (必須): 配列、`'x' | 'bluesky' | 'relaxy' | '02'` のいずれか
+
+#### レスポンス
+```json
+{
+  "post_id": "uuid",
+  "status": "success" | "failed" | "pending",
+  "targets": [
+    {
+      "id": "uuid",
+      "platform": "x",
+      "status": "success",
+      "external_post_url": "https://x.com/.../status/...",
+      "error_message": null
+    }
+  ]
+}
+```
+
+#### 動作詳細
+- **API系 (X / Bluesky)**: 並列投稿、各リクエストは**指数バックオフ 1s/2s/4s で初回+3リトライ = 計4回試行**
+- **拡張系 (relaxy / 02)**: post_targets を pending のまま残す → Phase 5 で Chrome 拡張機能が拾って投稿
+- 部分成功対応: X 成功 + Bluesky 失敗 でも posts は「failed」、各 target の詳細は post_targets に
+- 全体 status:
+  - 全 target が success → `success`
+  - どれか failed → `failed`
+  - それ以外（pending 残り） → `pending`
+
+### 動作確認（DevTools Console）
+
+#### X + Bluesky 同時投稿
+```js
+fetch('/api/posts', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    body_common: '統合API テスト ' + new Date().toISOString(),
+    target_platforms: ['x', 'bluesky']
+  })
+}).then(r => r.json()).then(console.log);
+```
+
+→ 両方の `external_post_url` が返れば成功 ✅
+
+#### 画像付き同時投稿
+```js
+fetch('/api/posts', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    body_common: '画像付き統合テスト',
+    images: [{ url: 'https://picsum.photos/600/400', width: 600, height: 400 }],
+    target_platforms: ['x', 'bluesky']
+  })
+}).then(r => r.json()).then(console.log);
+```
+
+#### 拡張系を含む（relaxy/02 は pending のまま残る）
+```js
+fetch('/api/posts', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    body_common: '拡張機能経由のテスト',
+    target_platforms: ['x', 'bluesky', 'relaxy', '02']
+  })
+}).then(r => r.json()).then(console.log);
+```
+
+→ X / Bluesky は success、relaxy / 02 は pending（拡張機能が後で投稿）
+
+### Vercel タイムアウトについて
+- API系 4回試行 + バックオフ計7秒 + 各投稿の処理時間で合計 30秒前後の可能性
+- Vercel Hobby プランは **maxDuration 10秒（Edge）/ 60秒 (Node Function)**
+- 本コードでは `maxDuration = 60` を指定済（route.ts）
+- リトライが多発するとタイムアウトの可能性、その場合は Phase 7 でキュー化（BullMQ等）検討
+
 ## 注意
 
-- 本リポジトリは Phase 4-2（X + Bluesky 投稿実装）の状態。
-- 投稿API統合 / Chrome拡張機能配信 / Instagram / Sentry は未設定。後続フェーズで追加予定。
+- 本リポジトリは Phase 4-3（投稿API統合）の状態。
+- Chrome拡張機能配信 / Instagram / Sentry / 課金制限 は未設定。後続フェーズで追加予定。
 #   S N S -  
  
