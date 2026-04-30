@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { copyToClipboard } from "@/lib/clipboard";
 
 const PLATFORM_LABEL: Record<string, string> = {
   x: "X",
@@ -19,10 +20,10 @@ const STATUS_BADGE: Record<
   pending: { icon: "⏳", bg: "bg-yellow-100 text-yellow-700", label: "待機中" }
 };
 
-// 業界SNS の手動投稿用 URL（Phase 5-4 で実 URL に差替予定、現状は仮値）
+// 業界SNS の手動投稿用 URL（実 URL）
 const MANUAL_OPEN_URL: Record<string, string> = {
-  relaxy: "https://relaxy.example/post/new",
-  "02": "https://02.example/post/new"
+  relaxy: "https://rx-sns.jp/",
+  "02": "https://m-sns.net/user/post/"
 };
 
 export type PostTargetSlim = {
@@ -58,6 +59,7 @@ export function HistoryClient({
 
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [retryError, setRetryError] = useState<Record<string, string>>({});
+  const [copyMsg, setCopyMsg] = useState<Record<string, string>>({});
 
   async function onRetry(postId: string) {
     setRetryingId(postId);
@@ -86,6 +88,41 @@ export function HistoryClient({
     const url = MANUAL_OPEN_URL[platform];
     if (!url) return;
     window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  async function handleCopy(targetId: string, text: string) {
+    const ok = await copyToClipboard(text);
+    setCopyMsg((prev) => ({
+      ...prev,
+      [targetId]: ok ? "コピーしました" : "コピーに失敗"
+    }));
+    setTimeout(() => {
+      setCopyMsg((prev) => ({ ...prev, [targetId]: "" }));
+    }, 2000);
+  }
+
+  async function markAsSuccess(targetId: string) {
+    try {
+      const res = await fetch(`/api/post-targets/${targetId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "success",
+          external_post_url: "(manual)",
+          error_message: null
+        })
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data?.error ?? `HTTP ${res.status}`);
+      }
+      window.location.reload();
+    } catch (e) {
+      alert(
+        "投稿完了の記録に失敗しました: " +
+          (e instanceof Error ? e.message : "unknown")
+      );
+    }
   }
 
   return (
@@ -119,7 +156,14 @@ export function HistoryClient({
             const failedTargets = post.post_targets.filter(
               (t) => t.status === "failed"
             );
+            // pending/failed の relaxy/02 はコピペ手動投稿の対象
+            const manualTargets = post.post_targets.filter(
+              (t) =>
+                (t.platform === "relaxy" || t.platform === "02") &&
+                (t.status === "pending" || t.status === "failed")
+            );
             const hasRetryable = failedTargets.length > 0;
+            const hasManual = manualTargets.length > 0;
             const isRetrying = retryingId === post.id;
 
             return (
@@ -175,35 +219,67 @@ export function HistoryClient({
                   </ul>
                 )}
 
-                {hasRetryable && (
-                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t">
-                    <button
-                      type="button"
-                      onClick={() => onRetry(post.id)}
-                      disabled={isRetrying}
-                      className="rounded bg-black px-3 py-1.5 text-xs text-white disabled:bg-gray-300"
-                    >
-                      {isRetrying ? "再試行中..." : "再試行"}
-                    </button>
-                    {failedTargets
-                      .filter(
-                        (t) => t.platform === "relaxy" || t.platform === "02"
-                      )
-                      .map((t) => (
+                {(hasRetryable || hasManual) && (
+                  <div className="space-y-2 pt-2 border-t">
+                    {hasRetryable && (
+                      <div className="flex flex-wrap items-center gap-2">
                         <button
-                          key={t.id}
                           type="button"
-                          onClick={() => openManual(t.platform)}
-                          className="rounded border px-3 py-1.5 text-xs"
+                          onClick={() => onRetry(post.id)}
+                          disabled={isRetrying}
+                          className="rounded bg-black px-3 py-1.5 text-xs text-white disabled:bg-gray-300"
                         >
-                          {PLATFORM_LABEL[t.platform]}を手動で開く
+                          {isRetrying ? "再試行中..." : "再試行"}
                         </button>
-                      ))}
-                    {retryError[post.id] && (
-                      <span className="text-xs text-red-600">
-                        {retryError[post.id]}
-                      </span>
+                        {retryError[post.id] && (
+                          <span className="text-xs text-red-600">
+                            {retryError[post.id]}
+                          </span>
+                        )}
+                      </div>
                     )}
+
+                    {/* 手動投稿フロー（relaxy / 02 で pending or failed の場合） */}
+                    {manualTargets.map((t) => (
+                      <div
+                        key={`manual-${t.id}`}
+                        className="rounded bg-blue-50 p-2 text-xs"
+                      >
+                        <div className="mb-1 font-semibold">
+                          {PLATFORM_LABEL[t.platform]} 手動投稿フロー
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleCopy(t.id, post.body_common)
+                            }
+                            className="rounded border bg-white px-2 py-1 hover:bg-gray-100"
+                          >
+                            📋 本文をコピー
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openManual(t.platform)}
+                            className="rounded border bg-white px-2 py-1 hover:bg-gray-100"
+                          >
+                            🌐 {PLATFORM_LABEL[t.platform]}を開く
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => markAsSuccess(t.id)}
+                            className="rounded bg-green-600 px-2 py-1 text-white hover:bg-green-700"
+                          >
+                            ✅ 投稿完了として記録
+                          </button>
+                          {copyMsg[t.id] && (
+                            <span className="text-green-700">
+                              {copyMsg[t.id]}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </li>

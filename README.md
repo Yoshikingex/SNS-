@@ -634,10 +634,41 @@ values
 3. 失敗した投稿があれば「再試行」ボタンクリック → 自動で再投稿 → 結果がページリロードで反映
 4. リラクシィー / 02 の失敗には「手動で開く」ボタン → 新タブで投稿フォーム表示
 
+## 業界 SNS 自動投稿の実 URL 反映（Phase 6 後編）
+
+### 確定した実 URL とセレクタ
+- **リラクシィー**: `https://rx-sns.jp/`（投稿モーダル）
+  - 本文: `textarea[placeholder="いまどうしてる？"]` （maxlength=330）
+  - 画像: `input[data-testid="image-file-input"]` （hidden, multiple）
+  - 投稿ボタン: `button[aria-label="投稿する"]`
+- **02**: `https://m-sns.net/user/post/`
+  - 本文: `textarea#content` （maxlength=280）
+  - 画像: `input[name="image1"]`
+  - 投稿ボタン: `button[type="submit"][name="action"][value="publish"]`
+
+### Migration 0005 適用（admin SQL）
+Supabase Dashboard → SQL Editor で [supabase/migrations/0005_dom_selectors_real_urls.sql](supabase/migrations/0005_dom_selectors_real_urls.sql) を実行 → 拡張機能が60秒以内に新セレクタを取得。
+
+### コピペ補助 UI（半自動投稿のフォールバック）
+
+`/dashboard/compose` の結果セクションと `/dashboard/history` の各カードに、**relaxy / 02 で pending or failed**の場合に以下のボタンが表示されます:
+
+- **📋 本文をコピー**: navigator.clipboard.writeText で本文をクリップボードにコピー
+- **🌐 リラクシィー/02を開く**: 実 URL を新タブで開く
+- **✅ 投稿完了として記録**: PATCH /api/post-targets/:id/status で status='success' に更新
+
+これで「拡張機能が動かない」「規約上手動が必要」等の場合でも、**5秒程度の手動操作で投稿フロー完了**できます。
+
+### 文字数制限（実値反映）
+- X: 280
+- Bluesky: 300
+- リラクシィー: **330**（rx-sns.jp の textarea maxlength から確定）
+- 02: **280**（m-sns.net の表示「0/280」から確定）
+
 ## 注意
 
-- 本リポジトリは Phase 6-3（投稿履歴画面）の状態。
+- 本リポジトリは Phase 6 後編（実 URL + コピペ UI）の状態。
 - エラーUI / Sentry / 課金制限 は未設定。後続フェーズで追加予定。
-- リラクシィー / 02 の実 URL は仮値のまま。実 URL 確定時に `manifest.config.ts` の content_scripts.matches と host_permissions を差替 + 拡張をリロード。
+- リラクシィー / 02 の自動投稿は dom_selectors テーブルに依存。Phase 5-4 の chrome.alarms で60秒以内に追従。
 #   S N S -  
  

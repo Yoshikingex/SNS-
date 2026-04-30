@@ -10,6 +10,7 @@ import {
 } from "react";
 import Link from "next/link";
 import { compressImage, type CompressedImage } from "@/lib/image";
+import { copyToClipboard } from "@/lib/clipboard";
 
 type Platform = "x" | "bluesky" | "relaxy" | "02";
 
@@ -34,8 +35,14 @@ const PLATFORMS: Platform[] = ["x", "bluesky", "relaxy", "02"];
 const LIMITS: Record<Platform, number> = {
   x: 280,
   bluesky: 300,
-  relaxy: 500, // 仮、実際の上限は要確認
-  "02": 500 // 仮
+  relaxy: 330, // rx-sns.jp の textarea maxlength="330" から確定
+  "02": 280 // m-sns.net の文字数表示「0/280」から確定
+};
+
+// 業界SNS の手動投稿フロー用 URL
+const MANUAL_URL: Record<string, string> = {
+  relaxy: "https://rx-sns.jp/",
+  "02": "https://m-sns.net/user/post/"
 };
 
 const COLORS: Record<Platform, string> = {
@@ -362,17 +369,86 @@ export function ComposeClient({ connections }: { connections: Connections }) {
 
       {/* 結果表示 */}
       {result && (
-        <section className="space-y-2 rounded border bg-gray-50 p-4">
-          <h2 className="text-sm font-semibold">投稿結果</h2>
-          <p className="text-xs text-gray-600">
-            post_id: <code>{result.post_id}</code> (status: {result.status})
-          </p>
-          <ul className="space-y-1">
-            {result.targets.map((t) => (
-              <li
-                key={t.id}
-                className="flex items-center gap-2 text-sm"
-              >
+        <ResultSection
+          result={result}
+          bodyText={text}
+          setResult={setResult}
+        />
+      )}
+    </main>
+  );
+}
+
+// 結果セクション + コピペ補助 UI
+function ResultSection({
+  result,
+  bodyText,
+  setResult
+}: {
+  result: PostResult;
+  bodyText: string;
+  setResult: (r: PostResult) => void;
+}) {
+  const [copyMsg, setCopyMsg] = useState<Record<string, string>>({});
+
+  async function handleCopy(targetId: string) {
+    const ok = await copyToClipboard(bodyText);
+    setCopyMsg((prev) => ({
+      ...prev,
+      [targetId]: ok ? "コピーしました" : "コピーに失敗"
+    }));
+    setTimeout(() => {
+      setCopyMsg((prev) => ({ ...prev, [targetId]: "" }));
+    }, 2000);
+  }
+
+  async function markAsSuccess(targetId: string) {
+    try {
+      const res = await fetch(`/api/post-targets/${targetId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "success",
+          external_post_url: "(manual)",
+          error_message: null
+        })
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data?.error ?? `HTTP ${res.status}`);
+      }
+      // ローカル状態を更新
+      const updated: PostResult = {
+        ...result,
+        targets: result.targets.map((t) =>
+          t.id === targetId
+            ? { ...t, status: "success", external_post_url: "(manual)" }
+            : t
+        )
+      };
+      setResult(updated);
+    } catch (e) {
+      alert(
+        "投稿完了の記録に失敗しました: " +
+          (e instanceof Error ? e.message : "unknown")
+      );
+    }
+  }
+
+  return (
+    <section className="space-y-3 rounded border bg-gray-50 p-4">
+      <h2 className="text-sm font-semibold">投稿結果</h2>
+      <p className="text-xs text-gray-600">
+        post_id: <code>{result.post_id}</code> (status: {result.status})
+      </p>
+      <ul className="space-y-2">
+        {result.targets.map((t) => {
+          const isManual =
+            (t.platform === "relaxy" || t.platform === "02") &&
+            (t.status === "pending" || t.status === "failed");
+          return (
+            <li key={t.id} className="rounded border bg-white p-2 space-y-2">
+              <div className="flex items-center gap-2 text-sm">
                 <span>
                   {t.status === "success"
                     ? "✅"
@@ -383,27 +459,65 @@ export function ComposeClient({ connections }: { connections: Connections }) {
                 <span className="font-semibold w-32">
                   {LABELS[t.platform as Platform] ?? t.platform}
                 </span>
-                {t.external_post_url ? (
+                {t.external_post_url && t.external_post_url !== "(manual)" ? (
                   <a
                     href={t.external_post_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-blue-600 underline truncate"
+                    className="text-blue-600 underline truncate text-xs"
                   >
                     {t.external_post_url}
                   </a>
+                ) : t.external_post_url === "(manual)" ? (
+                  <span className="text-xs text-green-700">
+                    手動投稿として記録済み
+                  </span>
                 ) : t.error_message ? (
                   <span className="text-red-600 text-xs">
                     {t.error_message}
                   </span>
                 ) : (
-                  <span className="text-xs text-gray-500">処理中</span>
+                  <span className="text-xs text-gray-500">
+                    {t.status === "pending"
+                      ? "拡張機能で処理中..."
+                      : "処理中"}
+                  </span>
                 )}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-    </main>
+              </div>
+
+              {isManual && (
+                <div className="flex flex-wrap items-center gap-2 pl-6 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(t.id)}
+                    className="rounded border bg-white px-2 py-1 hover:bg-gray-100"
+                  >
+                    📋 本文をコピー
+                  </button>
+                  <a
+                    href={MANUAL_URL[t.platform]}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded border bg-white px-2 py-1 hover:bg-gray-100"
+                  >
+                    🌐 {LABELS[t.platform as Platform]}を開く
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => markAsSuccess(t.id)}
+                    className="rounded bg-green-600 px-2 py-1 text-white hover:bg-green-700"
+                  >
+                    ✅ 投稿完了として記録
+                  </button>
+                  {copyMsg[t.id] && (
+                    <span className="text-green-700">{copyMsg[t.id]}</span>
+                  )}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }

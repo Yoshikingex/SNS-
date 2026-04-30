@@ -19,8 +19,8 @@ export default defineManifest({
   },
   permissions: ["storage", "tabs", "scripting", "alarms"],
   host_permissions: [
-    "https://relaxy.example/*",
-    "https://02.example/*",
+    "https://rx-sns.jp/*",
+    "https://m-sns.net/*",
     "http://localhost:3000/*",
     "https://post-integration-system.vercel.app/*",
     "https://post-integration-system-frees-projects-906fc790.vercel.app/*"
@@ -34,12 +34,12 @@ export default defineManifest({
   },
   content_scripts: [
     {
-      matches: ["https://relaxy.example/*"],
+      matches: ["https://rx-sns.jp/*"],
       js: ["src/content/relaxy.ts"],
       run_at: "document_idle"
     },
     {
-      matches: ["https://02.example/*"],
+      matches: ["https://m-sns.net/*"],
       js: ["src/content/zero-two.ts"],
       run_at: "document_idle"
     },
