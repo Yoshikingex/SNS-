@@ -8,6 +8,9 @@ import type {
   ContentPostResult,
   ExternalPostRequest
 } from "./types";
+import { refreshSelectors, setApiBaseUrl } from "./lib/selectors";
+
+const ALARM_REFRESH_SELECTORS = "refresh_selectors";
 
 type ConnectionState = {
   connected: boolean;
@@ -33,6 +36,23 @@ const pendingTasks = new Map<number, PendingTask>();
 chrome.runtime.onInstalled.addListener(() => {
   console.log("[投稿一括統合システム] extension installed");
   chrome.storage.local.set(INITIAL_STATE);
+  // Phase 5-4: 拡張インストール直後にセレクタを取得 + 1分間隔の alarm 開始
+  void refreshSelectors();
+  chrome.alarms.create(ALARM_REFRESH_SELECTORS, { periodInMinutes: 1 });
+});
+
+// 拡張起動（ブラウザ起動）時にもセレクタを取得して alarm を再生成
+chrome.runtime.onStartup.addListener(() => {
+  console.log("[投稿一括統合システム] browser startup");
+  void refreshSelectors();
+  chrome.alarms.create(ALARM_REFRESH_SELECTORS, { periodInMinutes: 1 });
+});
+
+// alarm 発火: 1分ごとにセレクタを再取得
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === ALARM_REFRESH_SELECTORS) {
+    void refreshSelectors();
+  }
 });
 
 // ===== Web アプリ → 拡張 (externally_connectable) =====
@@ -49,6 +69,12 @@ chrome.runtime.onMessageExternal.addListener(
         last_origin: sender.origin ?? sender.url ?? null
       };
       chrome.storage.local.set(state);
+      // Phase 5-4: Web オリジンを apiBaseUrl として保存して、selectors 取得先に使う
+      if (sender.origin) {
+        void setApiBaseUrl(sender.origin);
+        // 即時に1回 refresh しておく（次の alarm を待たない）
+        void refreshSelectors();
+      }
       sendResponse({
         type: "pong",
         extensionId: chrome.runtime.id,

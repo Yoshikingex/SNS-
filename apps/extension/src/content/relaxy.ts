@@ -1,7 +1,8 @@
 // Phase 5-2 #ops リラクシィー DOM 投稿
 // Phase 5-3 #ops で共通ロジックを ../lib/dom-helpers.ts に抽出
-// 注: セレクタはすべて仮値。Phase 5-4 で /api/dom-selectors から動的取得に置換予定。
-// 実 URL も仮値 (relaxy.example)。
+// Phase 5-4 #ops でセレクタを ../lib/selectors.ts のキャッシュから動的取得
+// 注: 実 URL は仮値 (relaxy.example)。実 URL 確定時に manifest を差し替え。
+//     dom_selectors テーブル (admin SQL) で実セレクタを管理する。
 
 import type {
   BackgroundToContentResponse,
@@ -14,6 +15,7 @@ import {
   waitForElement,
   waitForUrlChange
 } from "../lib/dom-helpers";
+import { getCachedSelectors } from "../lib/selectors";
 
 console.log("[投稿一括統合システム/relaxy] content script loaded");
 
@@ -36,12 +38,10 @@ chrome.runtime.sendMessage(
   }
 );
 
-// セレクタ仮値 (TODO: Phase 5-4 で /api/dom-selectors から動的取得)
-const SELECTORS = {
-  text: 'textarea[name="body"]',
-  fileInput: 'input[type="file"]',
-  submit: 'button[type="submit"]'
-} as const;
+// dom_selectors の field_name に対応するキー
+const FIELD_TEXT = "post_body";
+const FIELD_FILE = "image_upload";
+const FIELD_SUBMIT = "submit_button";
 
 const TIMEOUT_MS = 15_000;
 
@@ -59,22 +59,29 @@ async function executePost(task: ContentPostTask): Promise<void> {
 }
 
 async function runPost(task: ContentPostTask): Promise<ContentPostResult> {
+  // Phase 5-4: キャッシュからセレクタを取得（admin が dom_selectors を更新すると自動追従）
+  const selectors = await getCachedSelectors("relaxy");
+
+  const textSelector = requireSelector(selectors, FIELD_TEXT);
+  const fileSelector = requireSelector(selectors, FIELD_FILE);
+  const submitSelector = requireSelector(selectors, FIELD_SUBMIT);
+
   const textArea = await waitForElement<HTMLTextAreaElement>(
-    SELECTORS.text,
+    textSelector,
     TIMEOUT_MS
   );
   setReactValue(textArea, task.text);
 
   if (task.imageUrl) {
     const fileInput = await waitForElement<HTMLInputElement>(
-      SELECTORS.fileInput,
+      fileSelector,
       TIMEOUT_MS
     );
     await uploadImage(fileInput, task.imageUrl);
   }
 
   const submit = await waitForElement<HTMLButtonElement>(
-    SELECTORS.submit,
+    submitSelector,
     TIMEOUT_MS
   );
   submit.click();
@@ -88,4 +95,18 @@ async function runPost(task: ContentPostTask): Promise<ContentPostResult> {
     success: true,
     externalPostUrl: location.href
   };
+}
+
+function requireSelector(
+  map: Record<string, string>,
+  fieldName: string
+): string {
+  const value = map[fieldName];
+  if (!value) {
+    throw new Error(
+      `Selector for field '${fieldName}' is not in cache. ` +
+        "Check dom_selectors table and wait for next refresh."
+    );
+  }
+  return value;
 }

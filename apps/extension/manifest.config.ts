@@ -17,7 +17,7 @@ export default defineManifest({
     service_worker: "src/background.ts",
     type: "module"
   },
-  permissions: ["storage", "tabs", "scripting"],
+  permissions: ["storage", "tabs", "scripting", "alarms"],
   host_permissions: [
     "https://relaxy.example/*",
     "https://02.example/*",

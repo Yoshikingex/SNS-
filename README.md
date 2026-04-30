@@ -506,9 +506,49 @@ chrome.runtime.sendMessage(
 );
 ```
 
+## セレクタ動的取得（Phase 5-4）
+
+### 仕様
+拡張機能の `background.ts` が **/api/dom-selectors** を以下のタイミングで取得 → `chrome.storage.local` にキャッシュ:
+- 拡張インストール時 (`onInstalled`)
+- ブラウザ起動時 (`onStartup`)
+- Web ページから ping を受けた時 (即時 refresh)
+- **chrome.alarms による1分ごとの定期取得**
+
+content script (relaxy / zero-two) はキャッシュを直接読む（メッセージ不要）。
+
+### 反映時間
+- DB の dom_selectors を更新 → **最大60秒以内に拡張機能が新セレクタを使用** ✅
+
+### admin によるセレクタ更新運用
+1. ユーザーを admin に昇格（必要なら）:
+```sql
+update public.users set plan = 'admin' where email = '<admin-email>';
+```
+
+2. セレクタを新バージョンとして INSERT（既存は残る、最新 version が API で返される）:
+```sql
+insert into public.dom_selectors (platform, field_name, selector, version, updated_by)
+values
+  ('relaxy', 'post_body', '<新しいCSSセレクタ>', 2,
+   (select id from public.users where email = '<admin-email>'));
+```
+
+3. 60秒以内に拡張機能が自動取得 → 投稿時に新セレクタが使われる
+
+### 取得失敗時の挙動
+- API エラー / ネットワーク断 → **キャッシュ使用継続**（最後に取得成功した値）
+- キャッシュもなし → content script でエラー: `No cached dom_selectors. ...`
+
+### 関連ファイル
+- [apps/extension/src/lib/selectors.ts](apps/extension/src/lib/selectors.ts) — fetch / cache / API base URL 管理
+- [apps/extension/src/background.ts](apps/extension/src/background.ts) — 起動時 + alarm
+- [apps/extension/src/content/relaxy.ts](apps/extension/src/content/relaxy.ts) / [zero-two.ts](apps/extension/src/content/zero-two.ts) — getCachedSelectors 使用
+
 ## 注意
 
-- 本リポジトリは Phase 5-3（02自動投稿 / 仮実装）の状態。
-- セレクタ動的取得 / 投稿UI / Sentry / 課金制限 は未設定。後続フェーズで追加予定。
+- 本リポジトリは Phase 5-4（セレクタ動的取得）の状態。
+- 投稿UI / Sentry / 課金制限 は未設定。後続フェーズで追加予定。
+- リラクシィー / 02 の実 URL は仮値のまま。実 URL 確定時に `manifest.config.ts` の content_scripts.matches と host_permissions を差替 + 拡張をリロード。
 #   S N S -  
  

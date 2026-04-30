@@ -1,7 +1,7 @@
 // Phase 5-3 #ops 02 (メンエス専用SNS) DOM 投稿
-// 注: セレクタはすべて仮値。Phase 5-4 で /api/dom-selectors から動的取得に置換予定。
-// 実 URL も仮値 (02.example)。実 URL とフォーム DOM 構造が分かったら manifest と
-// dom_selectors テーブルを差し替え。
+// Phase 5-4 #ops でセレクタを ../lib/selectors.ts のキャッシュから動的取得
+// 注: 実 URL は仮値 (02.example)。実 URL 確定時に manifest を差し替え。
+//     dom_selectors テーブル (admin SQL) で実セレクタを管理する。
 // 02 の DOM が大きく異なる場合（contenteditable / iframe 等）は別実装方針が必要。
 
 import type {
@@ -15,6 +15,7 @@ import {
   waitForElement,
   waitForUrlChange
 } from "../lib/dom-helpers";
+import { getCachedSelectors } from "../lib/selectors";
 
 console.log("[投稿一括統合システム/02] content script loaded");
 
@@ -36,13 +37,10 @@ chrome.runtime.sendMessage(
   }
 );
 
-// セレクタ仮値 (TODO: Phase 5-4 で /api/dom-selectors から動的取得)
-// supabase/migrations/0003_dom_selectors.sql の seed と整合
-const SELECTORS = {
-  text: "#post-body",
-  fileInput: "#image-upload",
-  submit: "#submit-btn"
-} as const;
+// dom_selectors の field_name
+const FIELD_TEXT = "post_body";
+const FIELD_FILE = "image_upload";
+const FIELD_SUBMIT = "submit_button";
 
 const TIMEOUT_MS = 15_000;
 
@@ -60,23 +58,30 @@ async function executePost(task: ContentPostTask): Promise<void> {
 }
 
 async function runPost(task: ContentPostTask): Promise<ContentPostResult> {
+  // Phase 5-4: キャッシュからセレクタを取得
+  const selectors = await getCachedSelectors("02");
+
+  const textSelector = requireSelector(selectors, FIELD_TEXT);
+  const fileSelector = requireSelector(selectors, FIELD_FILE);
+  const submitSelector = requireSelector(selectors, FIELD_SUBMIT);
+
   // 02 のテキストフィールドが textarea か input か未確定 → 両対応
   const textEl = (await waitForElement<HTMLElement>(
-    SELECTORS.text,
+    textSelector,
     TIMEOUT_MS
   )) as HTMLTextAreaElement | HTMLInputElement;
   setReactValue(textEl, task.text);
 
   if (task.imageUrl) {
     const fileInput = await waitForElement<HTMLInputElement>(
-      SELECTORS.fileInput,
+      fileSelector,
       TIMEOUT_MS
     );
     await uploadImage(fileInput, task.imageUrl);
   }
 
   const submit = await waitForElement<HTMLButtonElement>(
-    SELECTORS.submit,
+    submitSelector,
     TIMEOUT_MS
   );
   submit.click();
@@ -90,4 +95,18 @@ async function runPost(task: ContentPostTask): Promise<ContentPostResult> {
     success: true,
     externalPostUrl: location.href
   };
+}
+
+function requireSelector(
+  map: Record<string, string>,
+  fieldName: string
+): string {
+  const value = map[fieldName];
+  if (!value) {
+    throw new Error(
+      `Selector for field '${fieldName}' is not in cache. ` +
+        "Check dom_selectors table and wait for next refresh."
+    );
+  }
+  return value;
 }
