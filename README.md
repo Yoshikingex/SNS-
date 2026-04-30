@@ -425,9 +425,56 @@ pong response: { type: "pong", extensionId: "xxxx...", receivedAt: "2026-..." }
 - **背景 Service Worker のログ**: `chrome://extensions/` → 拡張機能の「**サービスワーカー**」リンクをクリック → DevTools が開く
 - **externally_connectable のオリジン**: 現状 `localhost:3000` と Vercel 本番のみ許可。他のオリジンからは無視される
 
+## リラクシィー自動投稿（Phase 5-2 / 仮実装）
+
+### 状態
+- **コードは仮実装済み**（拡張機能 content script + background + Web 側 PATCH API）
+- **動作テストは未実施**（リラクシィー実 URL とフォーム HTML 構造の調査が必要）
+- セレクタは仮値: `textarea[name="body"]` / `input[type="file"]` / `button[type="submit"]`
+- 実 URL: `https://relaxy.example/*`（架空）→ Phase 5-4 で動的取得に置換 + 実 URL に差し替え
+
+### 実装ファイル
+- 拡張: [apps/extension/src/content/relaxy.ts](apps/extension/src/content/relaxy.ts)
+- 拡張: [apps/extension/src/background.ts](apps/extension/src/background.ts)（リラクシィーフロー追加）
+- 拡張: [apps/extension/src/types.ts](apps/extension/src/types.ts)（共有型）
+- Web: [apps/web/app/api/post-targets/[id]/status/route.ts](apps/web/app/api/post-targets/[id]/status/route.ts)（PATCH）
+
+### フロー（実 URL 確定後の想定）
+
+```
+[Web (localhost:3000)]
+   ↓ POST /api/posts (target_platforms に 'relaxy' 含む)
+[Web]
+   ↓ posts INSERT, post_targets INSERT (relaxy=pending)
+   ↓ X/Bluesky は API 即時投稿
+   ↓ relaxy は pending のまま、Web ページ JS が拡張に通知
+[ブラウザ JS] chrome.runtime.sendMessage(extId, {
+     type: 'post_to_relaxy',
+     postTargetId, text, imageUrl, apiBaseUrl: location.origin,
+     formUrl: 'https://relaxy.example/post/new'
+   })
+   ↓
+[拡張 background.ts] tabs.create({url: formUrl, active: false})
+   ↓
+[content/relaxy.ts loaded]
+   ↓ sendMessage({type: 'relaxy_ready'})
+[拡張 background] sendResponse({task: {text, imageUrl, postTargetId}})
+[content] DOM 操作 → 送信ボタン → URL 変化検知
+[content] sendMessage({type: 'relaxy_result', result: {success, ...}})
+[拡張 background] PATCH /api/post-targets/:id/status with credentials
+[Web] post_targets ステータス更新
+```
+
+### Phase 5-4 完了後にやる動作テスト
+1. `manifest.config.ts` の host_permissions / content_scripts の `relaxy.example` を実 URL に置換
+2. `dom_selectors` テーブルの仮値を実セレクタで上書き（admin SQL 実行）
+3. content script を `await getDomSelectors('relaxy', 'post_body')` 等の動的取得に書き換え
+4. リラクシィーにログイン状態のブラウザで `/api/posts` を target_platforms=['relaxy'] で叩く
+5. 拡張機能が背面でタブを開いて自動投稿、post_targets.status='success' に更新される
+
 ## 注意
 
-- 本リポジトリは Phase 5-1（拡張スケルトン）の状態。
-- 業界SNS DOM操作 / セレクタ動的取得 / 投稿UI / Sentry / 課金制限 は未設定。後続フェーズで追加予定。
+- 本リポジトリは Phase 5-2（リラクシィー自動投稿 / 仮実装）の状態。
+- 02用実装 / セレクタ動的取得 / 投稿UI / Sentry / 課金制限 は未設定。後続フェーズで追加予定。
 #   S N S -  
  
