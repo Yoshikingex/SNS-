@@ -37,6 +37,11 @@ export default defineManifest({
       matches: ["https://relaxy.example/*"],
       js: ["src/content/relaxy.ts"],
       run_at: "document_idle"
+    },
+    {
+      matches: ["https://02.example/*"],
+      js: ["src/content/zero-two.ts"],
+      run_at: "document_idle"
     }
   ]
 });

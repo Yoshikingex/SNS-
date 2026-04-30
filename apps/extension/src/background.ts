@@ -57,9 +57,9 @@ chrome.runtime.onMessageExternal.addListener(
       return true;
     }
 
-    // Phase 5-2: リラクシィーへの投稿リクエスト
-    if (msg?.type === "post_to_relaxy") {
-      handlePostToRelaxy(msg as ExternalPostRequest)
+    // Phase 5-2/5-3: リラクシィー or 02 への投稿リクエスト（同一フロー）
+    if (msg?.type === "post_to_relaxy" || msg?.type === "post_to_02") {
+      handleExtensionPost(msg as ExternalPostRequest)
         .then((r) => sendResponse(r))
         .catch((e) =>
           sendResponse({
@@ -74,12 +74,12 @@ chrome.runtime.onMessageExternal.addListener(
   }
 );
 
-async function handlePostToRelaxy(
+async function handleExtensionPost(
   req: ExternalPostRequest
 ): Promise<{ ok: boolean; tabId: number }> {
   if (!req.formUrl || !req.postTargetId || !req.apiBaseUrl) {
     throw new Error(
-      "post_to_relaxy: formUrl / postTargetId / apiBaseUrl are required"
+      `${req.type}: formUrl / postTargetId / apiBaseUrl are required`
     );
   }
   // 背面タブを開く
@@ -113,8 +113,8 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     return true;
   }
 
-  // content script の準備完了通知 (Phase 5-2)
-  if (msg?.type === "relaxy_ready") {
+  // content script の準備完了通知 (Phase 5-2 relaxy / 5-3 02 共通)
+  if (msg?.type === "relaxy_ready" || msg?.type === "02_ready") {
     const tabId = sender.tab?.id;
     if (!tabId) {
       sendResponse({ task: null });
@@ -135,22 +135,22 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     return true;
   }
 
-  // content script からの結果通知 (Phase 5-2)
-  if (msg?.type === "relaxy_result") {
+  // content script からの結果通知 (Phase 5-2 relaxy / 5-3 02 共通)
+  if (msg?.type === "relaxy_result" || msg?.type === "02_result") {
     const tabId = sender.tab?.id;
     const result = (msg as { result?: ContentPostResult }).result;
     const postTargetId = (msg as { postTargetId?: string }).postTargetId;
     if (!tabId || !result || !postTargetId) {
       return false;
     }
-    void finalizeRelaxyTask(tabId, postTargetId, result);
+    void finalizeExtensionTask(tabId, postTargetId, result);
     return false;
   }
 
   return false;
 });
 
-async function finalizeRelaxyTask(
+async function finalizeExtensionTask(
   tabId: number,
   postTargetId: string,
   result: ContentPostResult
@@ -175,7 +175,7 @@ async function finalizeRelaxyTask(
     );
   } catch (e) {
     console.error(
-      "[relaxy] status PATCH failed:",
+      "[ext] status PATCH failed:",
       e instanceof Error ? e.message : e
     );
   }
@@ -184,6 +184,6 @@ async function finalizeRelaxyTask(
   try {
     await chrome.tabs.remove(tabId);
   } catch (e) {
-    console.warn("[relaxy] tab close failed:", e);
+    console.warn("[ext] tab close failed:", e);
   }
 }

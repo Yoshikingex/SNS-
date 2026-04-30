@@ -472,9 +472,43 @@ pong response: { type: "pong", extensionId: "xxxx...", receivedAt: "2026-..." }
 4. リラクシィーにログイン状態のブラウザで `/api/posts` を target_platforms=['relaxy'] で叩く
 5. 拡張機能が背面でタブを開いて自動投稿、post_targets.status='success' に更新される
 
+## 02 自動投稿（Phase 5-3 / 仮実装）
+
+### 状態
+- **コードは仮実装済み**（リラクシィーと鏡対称、共通ヘルパー使用）
+- **動作テストは未実施**（02 実 URL とフォーム HTML 構造の調査必要）
+- セレクタは仮値: `#post-body` / `#image-upload` / `#submit-btn`
+- 実 URL: `https://02.example/*`（架空）→ Phase 5-4 で動的取得 + 実 URL に差替
+
+### 実装ファイル
+- 拡張: [apps/extension/src/content/zero-two.ts](apps/extension/src/content/zero-two.ts)（新規、02 専用）
+- 拡張: [apps/extension/src/lib/dom-helpers.ts](apps/extension/src/lib/dom-helpers.ts)（新規、共通ヘルパー）
+- 拡張: [apps/extension/src/content/relaxy.ts](apps/extension/src/content/relaxy.ts)（共通ヘルパー使用にリファクタ）
+- 拡張: [apps/extension/src/background.ts](apps/extension/src/background.ts)（リラクシィー/02 のメッセージ処理を統合）
+- 拡張: [apps/extension/manifest.config.ts](apps/extension/manifest.config.ts)（content_scripts に 02 追加）
+- Web: [apps/web/app/api/post-targets/[id]/status/route.ts](apps/web/app/api/post-targets/[id]/status/route.ts)（リラクシィーと共通）
+
+### Web 側からの使い方（Phase 5-4 完了後）
+リラクシィーと同じパターンで `chrome.runtime.sendMessage` の type を `post_to_02` にする：
+
+```js
+chrome.runtime.sendMessage(
+  '<EXT_ID>',
+  {
+    type: 'post_to_02',
+    postTargetId: '<post_target uuid>',
+    text: '投稿本文',
+    imageUrl: 'https://...',
+    apiBaseUrl: location.origin,
+    formUrl: 'https://02.example/post/new'  // 実 URL に差替必要
+  },
+  (response) => console.log(response)
+);
+```
+
 ## 注意
 
-- 本リポジトリは Phase 5-2（リラクシィー自動投稿 / 仮実装）の状態。
-- 02用実装 / セレクタ動的取得 / 投稿UI / Sentry / 課金制限 は未設定。後続フェーズで追加予定。
+- 本リポジトリは Phase 5-3（02自動投稿 / 仮実装）の状態。
+- セレクタ動的取得 / 投稿UI / Sentry / 課金制限 は未設定。後続フェーズで追加予定。
 #   S N S -  
  

@@ -1,7 +1,8 @@
-// Phase 5-2 #ops リラクシィー DOM 投稿
-// Phase 5-3 #ops で共通ロジックを ../lib/dom-helpers.ts に抽出
+// Phase 5-3 #ops 02 (メンエス専用SNS) DOM 投稿
 // 注: セレクタはすべて仮値。Phase 5-4 で /api/dom-selectors から動的取得に置換予定。
-// 実 URL も仮値 (relaxy.example)。
+// 実 URL も仮値 (02.example)。実 URL とフォーム DOM 構造が分かったら manifest と
+// dom_selectors テーブルを差し替え。
+// 02 の DOM が大きく異なる場合（contenteditable / iframe 等）は別実装方針が必要。
 
 import type {
   BackgroundToContentResponse,
@@ -15,21 +16,20 @@ import {
   waitForUrlChange
 } from "../lib/dom-helpers";
 
-console.log("[投稿一括統合システム/relaxy] content script loaded");
+console.log("[投稿一括統合システム/02] content script loaded");
 
-// background に「準備できた、タスクをくれ」と通知
 chrome.runtime.sendMessage(
-  { type: "relaxy_ready" },
+  { type: "02_ready" },
   (response: BackgroundToContentResponse | undefined) => {
     if (chrome.runtime.lastError) {
       console.error(
-        "[relaxy] sendMessage error:",
+        "[02] sendMessage error:",
         chrome.runtime.lastError.message
       );
       return;
     }
     if (!response || !response.task) {
-      console.log("[relaxy] no task assigned");
+      console.log("[02] no task assigned");
       return;
     }
     void executePost(response.task);
@@ -37,10 +37,11 @@ chrome.runtime.sendMessage(
 );
 
 // セレクタ仮値 (TODO: Phase 5-4 で /api/dom-selectors から動的取得)
+// supabase/migrations/0003_dom_selectors.sql の seed と整合
 const SELECTORS = {
-  text: 'textarea[name="body"]',
-  fileInput: 'input[type="file"]',
-  submit: 'button[type="submit"]'
+  text: "#post-body",
+  fileInput: "#image-upload",
+  submit: "#submit-btn"
 } as const;
 
 const TIMEOUT_MS = 15_000;
@@ -52,18 +53,19 @@ async function executePost(task: ContentPostTask): Promise<void> {
   }));
 
   chrome.runtime.sendMessage({
-    type: "relaxy_result",
+    type: "02_result",
     postTargetId: task.postTargetId,
     result
   });
 }
 
 async function runPost(task: ContentPostTask): Promise<ContentPostResult> {
-  const textArea = await waitForElement<HTMLTextAreaElement>(
+  // 02 のテキストフィールドが textarea か input か未確定 → 両対応
+  const textEl = (await waitForElement<HTMLElement>(
     SELECTORS.text,
     TIMEOUT_MS
-  );
-  setReactValue(textArea, task.text);
+  )) as HTMLTextAreaElement | HTMLInputElement;
+  setReactValue(textEl, task.text);
 
   if (task.imageUrl) {
     const fileInput = await waitForElement<HTMLInputElement>(
