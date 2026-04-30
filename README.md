@@ -545,10 +545,40 @@ values
 - [apps/extension/src/background.ts](apps/extension/src/background.ts) — 起動時 + alarm
 - [apps/extension/src/content/relaxy.ts](apps/extension/src/content/relaxy.ts) / [zero-two.ts](apps/extension/src/content/zero-two.ts) — getCachedSelectors 使用
 
+## 投稿作成画面（Phase 6-1）
+
+### URL
+- **`/dashboard/compose`** (ログイン必須)
+- ダッシュボード (`/dashboard`) からも「投稿を作成」ボタンでアクセス可能
+
+### 機能
+- 投稿本文の入力 (textarea)
+- 4SNS の文字数を別色プログレスバーで可視化（X 280 / Bluesky 300 / リラクシィー 500仮 / 02 500仮）
+- 文字数超過の SNS は自動で投稿先から OFF + 警告表示
+- 画像のドラッグ&ドロップ・ファイル選択（最大4枚）
+- 画像はクライアント側で **WebP / 最大1080×1080** に自動圧縮
+- 投稿先 SNS のチェックボックス選択（連携未完了は 🔒 + 未連携表示）
+- 「全SNSに投稿する」ボタン → `/api/posts` を叩く
+- 結果表示（成功/失敗/pending を SNS 別アイコン付きで）
+
+### 動作確認手順
+1. `pnpm dev` で起動
+2. http://localhost:3000/login でログイン
+3. http://localhost:3000/dashboard でダッシュボード表示
+4. 「**投稿を作成**」ボタンをクリック
+5. テキスト入力 → 文字数バーが更新される
+6. 画像をドラッグ＆ドロップ or ファイル選択
+7. 投稿先 SNS をチェック
+8. 「全SNSに投稿する」をクリック
+9. 結果が画面下に表示される（X / Bluesky の URL クリックで実投稿確認）
+
+### 詳細仕様
+詳細は [UI_SPEC.md](UI_SPEC.md) 参照。
+
 ## 注意
 
-- 本リポジトリは Phase 5-4（セレクタ動的取得）の状態。
-- 投稿UI / Sentry / 課金制限 は未設定。後続フェーズで追加予定。
+- 本リポジトリは Phase 6-1（投稿作成画面）の状態。
+- オンボーディング / 投稿履歴 / エラーUI / Sentry / 課金制限 は未設定。後続フェーズで追加予定。
 - リラクシィー / 02 の実 URL は仮値のまま。実 URL 確定時に `manifest.config.ts` の content_scripts.matches と host_permissions を差替 + 拡張をリロード。
 #   S N S -  
  

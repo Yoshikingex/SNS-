@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
@@ -12,13 +13,31 @@ export default async function DashboardPage() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6 px-4">
-      <h1 className="text-3xl font-bold">Dashboard</h1>
-      <p className="text-sm text-gray-600">ログイン中: {user.email}</p>
+    <main className="mx-auto max-w-md min-h-screen px-4 py-12 space-y-6">
+      <header className="space-y-2">
+        <h1 className="text-3xl font-bold">Dashboard</h1>
+        <p className="text-sm text-gray-600">ログイン中: {user.email}</p>
+      </header>
+
+      <nav className="grid gap-3">
+        <Link
+          href="/dashboard/compose"
+          className="rounded bg-black px-4 py-3 text-center text-white font-bold"
+        >
+          投稿を作成
+        </Link>
+        <Link
+          href="/settings/connections"
+          className="rounded border px-4 py-3 text-center"
+        >
+          SNS連携設定
+        </Link>
+      </nav>
+
       <form action="/auth/signout" method="post">
         <button
           type="submit"
-          className="rounded bg-gray-700 px-4 py-2 text-white"
+          className="w-full rounded bg-gray-700 px-4 py-2 text-white"
         >
           ログアウト
         </button>
