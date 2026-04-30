@@ -27,6 +27,12 @@ export default async function DashboardPage() {
           投稿を作成
         </Link>
         <Link
+          href="/dashboard/history"
+          className="rounded border px-4 py-3 text-center"
+        >
+          投稿履歴
+        </Link>
+        <Link
           href="/settings/connections"
           className="rounded border px-4 py-3 text-center"
         >
