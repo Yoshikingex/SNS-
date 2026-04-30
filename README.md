@@ -575,10 +575,41 @@ values
 ### 詳細仕様
 詳細は [UI_SPEC.md](UI_SPEC.md) 参照。
 
+## オンボーディング（Phase 6-2）
+
+### URL
+- **`/onboarding/1`** 〜 `/onboarding/5`（ログイン必須）
+- ダッシュボード (`/dashboard`) から「初めての方（5分セットアップ）」リンクでアクセス可能
+
+### 5ステップ
+1. **Chrome 拡張機能インストール案内**: 拡張がインストールされたら自動検知（`web-bridge.ts` content script が postMessage で通知）
+2. **X 連携**: 既存 OAuth 2.0 PKCE フロー
+3. **Bluesky 連携**: AppPassword 入力フォーム
+4. **リラクシィー ログイン確認**: ブラウザで普通にログインしておくよう案内 + チェックボックス
+5. **02 ログイン確認**: 同上 + 完了で `/dashboard/compose` へ遷移
+
+### 各ステップの特徴
+- 独立 URL → ブラウザ戻るボタン対応
+- 進捗バー（1/5 〜 5/5）
+- 戻る / スキップ / 次へ のナビゲーション
+- 連携済みなら「✅ 連携済み: @user」表示
+
+### 拡張インストール検知の仕組み
+- 拡張側 [src/content/web-bridge.ts](apps/extension/src/content/web-bridge.ts) が localhost:3000 / Vercel オリジンで動作
+- ページロード時に `window.postMessage({source: "post-integration-extension", type: "installed"})` を送信
+- Web 側 (Step1) が `window.addEventListener("message", ...)` で受信 → 「✅ 拡張機能を検知しました」表示
+
+### 動作確認手順
+1. http://localhost:3000/login でログイン
+2. http://localhost:3000/onboarding/1 を開く
+3. 拡張がインストール済なら緑表示、未インストールなら手順に従ってインストール → リロード
+4. 「次へ」で 2/5 → X連携、3/5 → Bluesky、4/5 → リラクシィー、5/5 → 02
+5. 5/5 で「完了して投稿画面へ」 → `/dashboard/compose` 遷移
+
 ## 注意
 
-- 本リポジトリは Phase 6-1（投稿作成画面）の状態。
-- オンボーディング / 投稿履歴 / エラーUI / Sentry / 課金制限 は未設定。後続フェーズで追加予定。
+- 本リポジトリは Phase 6-2（オンボーディング）の状態。
+- 投稿履歴 / エラーUI / Sentry / 課金制限 は未設定。後続フェーズで追加予定。
 - リラクシィー / 02 の実 URL は仮値のまま。実 URL 確定時に `manifest.config.ts` の content_scripts.matches と host_permissions を差替 + 拡張をリロード。
 #   S N S -  
  

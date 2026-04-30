@@ -42,6 +42,15 @@ export default defineManifest({
       matches: ["https://02.example/*"],
       js: ["src/content/zero-two.ts"],
       run_at: "document_idle"
+    },
+    {
+      matches: [
+        "http://localhost:3000/*",
+        "https://post-integration-system.vercel.app/*",
+        "https://post-integration-system-frees-projects-906fc790.vercel.app/*"
+      ],
+      js: ["src/content/web-bridge.ts"],
+      run_at: "document_idle"
     }
   ]
 });

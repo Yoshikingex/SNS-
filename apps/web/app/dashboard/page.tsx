@@ -32,6 +32,12 @@ export default async function DashboardPage() {
         >
           SNS連携設定
         </Link>
+        <Link
+          href="/onboarding/1"
+          className="rounded border px-4 py-3 text-center text-sm text-gray-600"
+        >
+          初めての方（5分セットアップ）
+        </Link>
       </nav>
 
       <form action="/auth/signout" method="post">
