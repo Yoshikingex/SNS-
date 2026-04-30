@@ -11,6 +11,7 @@ export const X_SCOPES = [
   "tweet.read",
   "tweet.write",
   "users.read",
+  "media.write",
   "offline.access"
 ] as const;
 
