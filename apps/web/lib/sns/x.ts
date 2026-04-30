@@ -104,7 +104,7 @@ async function ensureFreshAccessToken(creds: XCredentials): Promise<XCredentials
   };
 }
 
-/** X API v2 /2/media/upload で画像アップロード（OAuth2 のみで完結） */
+/** X API v2 /2/media/upload で画像アップロード（OAuth2 + シンプル multipart 1リクエスト） */
 async function uploadImageV2(
   accessToken: string,
   imageUrl: string
@@ -116,67 +116,41 @@ async function uploadImageV2(
   const buffer = Buffer.from(await imgRes.arrayBuffer());
   const contentType = imgRes.headers.get("content-type") ?? "image/jpeg";
 
-  // INIT
-  const initRes = await fetch("https://api.x.com/2/media/upload?command=INIT", {
+  // X API v2: multipart/form-data で 'media' フィールドに画像を入れて1回 POST
+  // (旧 v1.1 の INIT/APPEND/FINALIZE チャンク方式は v2 では非対応)
+  const fd = new FormData();
+  fd.append("media", new Blob([buffer], { type: contentType }), "image");
+  fd.append("media_category", "tweet_image");
+
+  const res = await fetch("https://api.x.com/2/media/upload", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/x-www-form-urlencoded"
+      Authorization: `Bearer ${accessToken}`
+      // Content-Type は FormData が boundary 付きで自動設定するので明示しない
     },
-    body: new URLSearchParams({
-      total_bytes: String(buffer.byteLength),
-      media_type: contentType,
-      media_category: "tweet_image"
-    }).toString()
+    body: fd
   });
-  if (!initRes.ok) {
-    throw new Error(`media INIT failed: ${initRes.status} ${await initRes.text()}`);
+  if (!res.ok) {
+    throw new Error(
+      `media upload failed: ${res.status} ${await res.text()}`
+    );
   }
-  const initJson = (await initRes.json()) as {
-    data?: { id?: string };
+
+  // レスポンス形式は揺れる: {data: {id}} or {id, media_key} or {media_id_string}
+  const json = (await res.json()) as {
+    data?: { id?: string; media_key?: string };
+    id?: string;
     media_id_string?: string;
     media_id?: string | number;
   };
   const mediaId =
-    initJson.data?.id ??
-    initJson.media_id_string ??
-    (initJson.media_id !== undefined ? String(initJson.media_id) : undefined);
+    json.data?.id ??
+    json.id ??
+    json.media_id_string ??
+    (json.media_id !== undefined ? String(json.media_id) : undefined);
   if (!mediaId) {
-    throw new Error(`media INIT: media_id not returned (${JSON.stringify(initJson)})`);
+    throw new Error(`media upload: id not in response: ${JSON.stringify(json)}`);
   }
-
-  // APPEND
-  const fd = new FormData();
-  fd.append("command", "APPEND");
-  fd.append("media_id", mediaId);
-  fd.append("segment_index", "0");
-  fd.append("media", new Blob([buffer], { type: contentType }));
-  const appendRes = await fetch("https://api.x.com/2/media/upload", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}` },
-    body: fd
-  });
-  if (!appendRes.ok) {
-    throw new Error(
-      `media APPEND failed: ${appendRes.status} ${await appendRes.text()}`
-    );
-  }
-
-  // FINALIZE
-  const finalRes = await fetch("https://api.x.com/2/media/upload?command=FINALIZE", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/x-www-form-urlencoded"
-    },
-    body: new URLSearchParams({ media_id: mediaId }).toString()
-  });
-  if (!finalRes.ok) {
-    throw new Error(
-      `media FINALIZE failed: ${finalRes.status} ${await finalRes.text()}`
-    );
-  }
-
   return mediaId;
 }
 
