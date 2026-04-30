@@ -16,6 +16,15 @@ type Platform = "x" | "bluesky" | "relaxy" | "02";
 
 type Connections = Record<Platform, boolean>;
 
+// API 連携が必要なプラットフォーム（OAuth/AppPassword）
+// それ以外（relaxy / 02）は拡張機能 + ユーザーのブラウザログインで動作
+const REQUIRES_OAUTH: Record<Platform, boolean> = {
+  x: true,
+  bluesky: true,
+  relaxy: false,
+  "02": false
+};
+
 type ResultTarget = {
   id: string;
   platform: string;
@@ -69,8 +78,9 @@ export function ComposeClient({ connections }: { connections: Connections }) {
   const [selected, setSelected] = useState<Record<Platform, boolean>>({
     x: connections.x,
     bluesky: connections.bluesky,
-    relaxy: connections.relaxy,
-    "02": connections["02"]
+    // 業界系は OAuth 不要、default は OFF（ユーザーが必要時にチェック）
+    relaxy: false,
+    "02": false
   });
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<PostResult | null>(null);
@@ -99,7 +109,9 @@ export function ComposeClient({ connections }: { connections: Connections }) {
   const canSubmit =
     !submitting &&
     text.trim().length > 0 &&
-    PLATFORMS.some((p) => selected[p] && connections[p]);
+    PLATFORMS.some(
+      (p) => selected[p] && (REQUIRES_OAUTH[p] ? connections[p] : true)
+    );
 
   async function handleFiles(files: FileList | File[]) {
     setImageError(null);
@@ -152,7 +164,7 @@ export function ComposeClient({ connections }: { connections: Connections }) {
     setResult(null);
     try {
       const target_platforms = PLATFORMS.filter(
-        (p) => selected[p] && connections[p]
+        (p) => selected[p] && (REQUIRES_OAUTH[p] ? connections[p] : true)
       );
       if (target_platforms.length === 0) {
         throw new Error("投稿先のSNSが選択されていません");
@@ -308,9 +320,11 @@ export function ComposeClient({ connections }: { connections: Connections }) {
         <h2 className="text-sm font-semibold">投稿先</h2>
         <div className="grid grid-cols-2 gap-2">
           {PLATFORMS.map((p) => {
+            const requiresOauth = REQUIRES_OAUTH[p];
             const connected = connections[p];
             const overLimit = text.length > LIMITS[p];
-            const disabled = !connected || overLimit;
+            // OAuth 必須なら未連携時に disabled、業界系（拡張対応）は文字数オーバーのみ
+            const disabled = (requiresOauth && !connected) || overLimit;
             return (
               <label
                 key={p}
@@ -322,32 +336,38 @@ export function ComposeClient({ connections }: { connections: Connections }) {
               >
                 <input
                   type="checkbox"
-                  checked={selected[p] && connected && !overLimit}
+                  checked={selected[p] && !disabled}
                   disabled={disabled}
                   onChange={(e) =>
                     setSelected((prev) => ({ ...prev, [p]: e.target.checked }))
                   }
                 />
                 <span className="flex-1 text-sm">{LABELS[p]}</span>
-                {!connected && (
+                {requiresOauth && !connected && (
                   <span className="text-xs text-gray-500">🔒 未連携</span>
                 )}
-                {overLimit && connected && (
+                {!requiresOauth && (
+                  <span className="text-xs text-gray-500">拡張で投稿</span>
+                )}
+                {overLimit && (requiresOauth ? connected : true) && (
                   <span className="text-xs text-red-500">超過</span>
                 )}
               </label>
             );
           })}
         </div>
-        {PLATFORMS.some((p) => !connections[p]) && (
+        {PLATFORMS.some((p) => REQUIRES_OAUTH[p] && !connections[p]) && (
           <p className="text-xs text-gray-600">
-            未連携のSNSは{" "}
+            未連携のSNS（X / Bluesky）は{" "}
             <Link href="/settings/connections" className="text-blue-600 underline">
               連携設定
             </Link>
             {" "}から登録してください
           </p>
         )}
+        <p className="text-xs text-gray-500">
+          リラクシィー / 02 はブラウザでログイン中なら、拡張機能 + コピペで投稿できます
+        </p>
       </section>
 
       {/* 投稿ボタン */}
