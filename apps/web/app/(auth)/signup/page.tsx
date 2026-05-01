@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export default function SignupPage({
   searchParams
@@ -13,11 +14,44 @@ export default function SignupPage({
     const password = String(formData.get("password") ?? "");
 
     const supabase = createClient();
-    const { error } = await supabase.auth.signUp({ email, password });
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+      email,
+      password
+    });
 
-    if (error) {
-      redirect(`/signup?error=${encodeURIComponent(error.message)}`);
+    if (signUpError) {
+      redirect(`/signup?error=${encodeURIComponent(signUpError.message)}`);
     }
+
+    // Supabase Free プランは「Confirm email」を OFF にできないため、
+    // Service Role Key で email_confirmed_at を即時付与してログイン可能にする。
+    const userId = signUpData.user?.id;
+    let confirmErrorMsg: string | null = null;
+    if (userId) {
+      try {
+        const admin = createAdminClient();
+        const { error: confirmError } = await admin.auth.admin.updateUserById(
+          userId,
+          { email_confirm: true }
+        );
+        if (confirmError) confirmErrorMsg = confirmError.message;
+      } catch (e) {
+        confirmErrorMsg = e instanceof Error ? e.message : "auto-confirm failed";
+      }
+    }
+    if (confirmErrorMsg) {
+      redirect(`/signup?error=${encodeURIComponent(confirmErrorMsg)}`);
+    }
+
+    // 確認済みになったので即ログインさせて Cookie を確立。
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+    if (signInError) {
+      redirect(`/signup?error=${encodeURIComponent(signInError.message)}`);
+    }
+
     redirect("/dashboard");
   }
 
