@@ -13,37 +13,28 @@ export default function SignupPage({
     const email = String(formData.get("email") ?? "");
     const password = String(formData.get("password") ?? "");
 
+    // Supabase Free プランは確認メール送信が必須かつレート制限が厳しい（1h数通）。
+    // 確認メールを完全にスキップするため、Admin API でユーザーを直接作成する。
+    // email_confirm: true で作成された瞬間から確認済み状態になり、
+    // メール送信も一切発生しない（= レート制限を消費しない）。
+    let createErrorMsg: string | null = null;
+    try {
+      const admin = createAdminClient();
+      const { error: createError } = await admin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true
+      });
+      if (createError) createErrorMsg = createError.message;
+    } catch (e) {
+      createErrorMsg = e instanceof Error ? e.message : "createUser failed";
+    }
+    if (createErrorMsg) {
+      redirect(`/signup?error=${encodeURIComponent(createErrorMsg)}`);
+    }
+
+    // 作成済みユーザーで即ログインして Cookie を確立。
     const supabase = createClient();
-    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-      email,
-      password
-    });
-
-    if (signUpError) {
-      redirect(`/signup?error=${encodeURIComponent(signUpError.message)}`);
-    }
-
-    // Supabase Free プランは「Confirm email」を OFF にできないため、
-    // Service Role Key で email_confirmed_at を即時付与してログイン可能にする。
-    const userId = signUpData.user?.id;
-    let confirmErrorMsg: string | null = null;
-    if (userId) {
-      try {
-        const admin = createAdminClient();
-        const { error: confirmError } = await admin.auth.admin.updateUserById(
-          userId,
-          { email_confirm: true }
-        );
-        if (confirmError) confirmErrorMsg = confirmError.message;
-      } catch (e) {
-        confirmErrorMsg = e instanceof Error ? e.message : "auto-confirm failed";
-      }
-    }
-    if (confirmErrorMsg) {
-      redirect(`/signup?error=${encodeURIComponent(confirmErrorMsg)}`);
-    }
-
-    // 確認済みになったので即ログインさせて Cookie を確立。
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email,
       password
