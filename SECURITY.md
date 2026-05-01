@@ -1,107 +1,171 @@
 # SECURITY.md
 
-## 認証フロー仕様（Phase 2-1）
+Matomell のセキュリティ設計とポリシー。
+
+---
+
+## 認証フロー
 
 ### 採用方式
-- **Supabase Auth** によるメール+パスワード認証（JWT セッション）
+
+- **Supabase Auth**（メール+パスワード、JWT セッション）
 - ライブラリ: `@supabase/ssr`（Server Component / Server Action 両対応）
-- セッション保管: HttpOnly Cookie（Supabase 標準、改ざん耐性あり）
+- セッション保管: HttpOnly Cookie
 
-### スコープ
-- ✅ サインアップ / ログイン / ログアウト
-- ✅ 認証ミドルウェアによる `/dashboard` 配下の保護
-- ✅ `public.users` テーブル + RLS（本人のみ SELECT/UPDATE 可）
-- ❌ Phase 2-2 以降: 暗号化、SNS OAuth、2FA、パスワードリセット、確認メール
+### サインアップフロー（auto-confirm 実装済み）
 
-### フロー図
+Supabase Free プランは「Confirm email」を UI から OFF にできない仕様（強制 ON）。本番投入時に「Email not confirmed」エラーで詰まったため、**Service Role Key を使った admin.createUser で迂回**する設計に切り替え済み。
 
 ```
-ブラウザ              Next.js (Vercel)            Supabase Auth
-  │                        │                           │
-  │ POST /signup           │                           │
-  ├───────────────────────>│                           │
-  │  (form: email/pwd)     │ supabase.auth.signUp()    │
-  │                        ├──────────────────────────>│
-  │                        │                           │ INSERT auth.users
-  │                        │                           │ → trigger
-  │                        │                           │ → INSERT public.users
-  │                        │ Set-Cookie (sb-*)         │
-  │<───────────────────────┤<──────────────────────────┤
-  │ 302 → /dashboard       │                           │
-  │                        │                           │
-  │ GET /dashboard         │                           │
-  ├───────────────────────>│                           │
-  │  (Cookie: sb-*)        │ middleware: getUser()     │
-  │                        ├──────────────────────────>│
-  │                        │ → user OK / null          │
-  │<───────────────────────┤                           │
-  │ 200 (Hello Dashboard)  │                           │
-  │ or 302 → /login        │                           │
+ブラウザ                  Next.js Server Action               Supabase
+  │ POST /signup              │                                 │
+  ├─────────────────────────>│                                 │
+  │ (email, password)        │ admin.createUser({              │
+  │                          │   email, password,              │
+  │                          │   email_confirm: true           │  ← メール送信ゼロ
+  │                          │ })                              │     即時確認済み状態
+  │                          ├────────────────────────────────>│
+  │                          │                                 │ INSERT auth.users
+  │                          │                                 │ → trigger
+  │                          │                                 │ → INSERT public.users
+  │                          │ signInWithPassword              │
+  │                          ├────────────────────────────────>│
+  │ Set-Cookie (sb-*)        │                                 │
+  │<─────────────────────────┤<────────────────────────────────┤
+  │ 302 → /dashboard         │                                 │
 ```
 
-### 未認証アクセスのリダイレクト
-- `/dashboard` 配下：`middleware.ts` が Cookie から user を取得、null なら `/login` へ 302
-- 未保護パス（`/`, `/login`, `/signup`）：常に通過
+実装: `apps/web/lib/supabase/admin.ts` + `apps/web/app/(auth)/signup/page.tsx`
+
+### ログインフロー
+
+`signInWithPassword` のみ。Cookie に JWT セッションが保存され、`middleware.ts` が `/dashboard/*` への未認証アクセスをブロック → `/login` へリダイレクト。
+
+### ログアウト
+
+`/auth/signout` で `supabase.auth.signOut()` → Cookie 削除 → `/login` へ。
 
 ---
 
 ## 鍵棚卸し表
 
-| 鍵名 | 用途 | 保管場所 | クライアント露出 | ローテ周期 | 担当 |
-|---|---|---|---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase API エンドポイント | Vercel 環境変数 / `.env.local` | あり（NEXT_PUBLIC_）| 不要 | [REDACTED] |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase 匿名キー（RLS 必須） | Vercel 環境変数 / `.env.local` | あり（NEXT_PUBLIC_）| 90日 | [REDACTED] |
-| `SUPABASE_SERVICE_ROLE_KEY` | サーバ側管理用（RLS バイパス） | Vercel 環境変数のみ（**`.env.local` も最小限**）| **絶対露出禁止** | 90日 | [REDACTED] |
-| `ENCRYPTION_KEY` | AES-256-GCM 暗号化鍵（SNS資格情報のDB保存用 / Phase 3 以降） | Vercel 環境変数のみ | **絶対露出禁止** | 180日 | [REDACTED] |
-| `X_CLIENT_ID` | X (Twitter) OAuth2 Client ID | Vercel 環境変数 / `.env.local` | サーバ側のみ参照 | アプリ削除時のみ | [REDACTED] |
-| `X_CLIENT_SECRET` | X (Twitter) OAuth2 Client Secret | Vercel 環境変数のみ | **絶対露出禁止** | アプリ削除時のみ | [REDACTED] |
-| `X_REDIRECT_URI` | OAuth2 callback URL（X Developer Portal と一致必須） | Vercel 環境変数 / `.env.local` | URL のみ（機密性低） | 不要 | - |
-| ユーザー個別 access_token / refresh_token | X 投稿用 OAuth2 トークン | `sns_accounts.encrypted_credentials`（AES-256-GCM 暗号化済） | **平文露出禁止** | refresh_token で自動更新 | システム |
-| ユーザー個別 Bluesky AppPassword | Bluesky 投稿用認証 | `sns_accounts.encrypted_credentials`（AES-256-GCM 暗号化済 / identifier+app_password を JSON で） | **平文露出禁止** | ユーザーが Bluesky 側で revoke + 再連携 | ユーザー本人 |
+| 鍵名 | 用途 | 保管場所 | クライアント露出 | ローテ周期 |
+|---|---|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase API エンドポイント | Vercel 環境変数 / `.env.local` | あり（NEXT_PUBLIC_）| 不要 |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 匿名キー（RLS 必須） | Vercel 環境変数 / `.env.local` | あり（NEXT_PUBLIC_）| 90日 |
+| `SUPABASE_SERVICE_ROLE_KEY` | サーバ側管理用（RLS バイパス） | Vercel 環境変数 / `.env.local`（最小限） | **絶対露出禁止** | 90日 |
+| `ENCRYPTION_KEY` | AES-256-GCM 暗号化鍵（SNS資格情報用） | Vercel 環境変数のみ | **絶対露出禁止** | 180日 |
+| `X_CLIENT_ID` | X OAuth2 Client ID | Vercel 環境変数 / `.env.local` | サーバ側のみ参照 | アプリ削除時のみ |
+| `X_CLIENT_SECRET` | X OAuth2 Client Secret | Vercel 環境変数のみ | **絶対露出禁止** | アプリ削除時のみ |
+| `X_REDIRECT_URI` | X OAuth callback URL | Vercel 環境変数 / `.env.local` | URL のみ | 不要 |
+| ユーザー個別 X access/refresh token | 投稿用 OAuth2 トークン | `sns_accounts.encrypted_credentials`（AES-256-GCM 暗号化） | **平文露出禁止** | refresh で自動更新 |
+| ユーザー個別 Bluesky AppPassword | 投稿用認証 | `sns_accounts.encrypted_credentials`（AES-256-GCM 暗号化） | **平文露出禁止** | ユーザーが Bluesky 側で revoke + 再連携 |
 
-### ENCRYPTION_KEY の生成方法
+### Service Role Key の取得位置
+
+Supabase Dashboard → `Settings > API Keys` → タブ **Legacy anon, service_role API keys** → `service_role` の `eyJ...` JWT。新形式 `sb_secret_*` は使わない（既存コードは JWT 形式前提）。
+
+### `ENCRYPTION_KEY` の生成
+
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
-出力された 44文字（Base64）の値を `ENCRYPTION_KEY` に設定。
 
-### ENCRYPTION_KEY のローテーション方針（Phase 3 以降で運用開始）
-- 鍵を変更する前に既存暗号文をすべて旧鍵で復号 → 新鍵で再暗号化 → DB 更新
-- 鍵ローテーション中は短時間のメンテナンスウィンドウを設ける
-- 詳細手順は Phase 7 のランブックで策定予定
+44文字 Base64 を `ENCRYPTION_KEY` に設定。
 
 ### 鍵取り扱い原則
-- **値は本ドキュメントには一切記載しない**（`[REDACTED]` のみ）
-- `git grep -E "eyJ[A-Za-z0-9_-]+\\." -- ':!**/node_modules/**'` で JWT リテラル0件を確認すること
-- `.env.local` は `.gitignore` で除外済（Phase 1-1 で確認）
-- Service Role Key を持つコードは Server Component / Route Handler のみ。Client Component で参照禁止
-- 鍵漏洩時は Supabase Dashboard で即時ローテし、Vercel 環境変数を更新 → 再デプロイ
+
+- 値は本ドキュメントには一切記載しない（`[REDACTED]`）
+- `git grep -E "eyJ[A-Za-z0-9_-]+\\."` で JWT リテラル0件であること
+- `.env.local` は `.gitignore` で除外
+- Service Role Key を使うコードは Server Action / Route Handler のみ。Client Component で参照禁止（admin.ts に閉じ込め）
+- 漏洩時は Supabase Dashboard で即時ローテ → Vercel 環境変数を更新 → 再デプロイ
+
+### ローテーション方針（運用開始時に確立）
+
+- `ENCRYPTION_KEY` 変更前に既存暗号文を全件旧鍵で復号 → 新鍵で再暗号化 → DB 更新（Phase 7-3 ランブック予定）
+- 短時間メンテナンスウィンドウを設けて実施
 
 ---
 
 ## RLS（Row Level Security）方針
 
-### `public.users`
-- **SELECT**: `auth.uid() = id`（本人のみ）
-- **UPDATE**: `auth.uid() = id`（本人のみ、`with check` 同条件）
-- **INSERT/DELETE**: ポリシーなし → 直接拒否。`auth.users` への INSERT トリガ経由のみ自動生成
+### user_id を持つテーブル（`users` / `posts` / `sns_accounts`）
 
-### 拒否される操作の例
-- 他ユーザーの `id` を指定した SELECT/UPDATE → RLS で 0行 / 0更新
-- 匿名キーでの直接 INSERT → ポリシーなしで拒否
-- 認証なしでの全件取得 → 拒否
+4種すべて `auth.uid() = user_id` で制限：SELECT / INSERT (with check) / UPDATE / DELETE。
+
+### `post_targets`（user_id を持たない）
+
+posts 経由のサブクエリで制限：
+
+```sql
+exists (
+  select 1 from public.posts
+  where posts.id = post_targets.post_id
+    and posts.user_id = auth.uid()
+)
+```
+
+### `dom_selectors`（拡張機能から anon でも読める例外）
+
+- **SELECT**: anon 含む全員可（migration 0004 で許可、MV3 SW が Cookie を送れないため）
+- **INSERT/UPDATE/DELETE**: `users.plan = 'admin'` のみ
+
+### 拒否される操作
+
+- 他ユーザーの `id` を指定した SELECT/UPDATE → 0行 / 0更新
+- 認証なしでの posts/sns_accounts 全件取得 → 拒否
+- 一般ユーザーの dom_selectors INSERT → 拒否
+
+---
+
+## 拡張機能のセキュリティ
+
+### externally_connectable
+
+`apps/extension/manifest.config.ts` で `chrome.runtime.sendMessage` を受け付けるオリジンを限定:
+- `http://localhost:3000`
+- `https://post-integration-system-frees-projects-906fc790.vercel.app`
+- （将来的にカスタムドメインを足す場合は明示追加）
+
+### Service Worker → Web API への呼び出し
+
+MV3 SW は third-party context 扱いのため Supabase の `sb-*` Cookie (SameSite=Lax) が送られない。対策:
+- `dom_selectors` API は anon SELECT 可に開放（migration 0004）
+- 拡張からの結果通知 (`PATCH /api/post-targets/:id/status`) は対応する Web ページが Cookie を持って中継する設計
+
+### content script の権限
+
+リラクシィー / 02 のページに content_script を注入。投稿フォームの DOM 操作のみで、ページ外の情報は読まない。
 
 ---
 
 ## 監査
-- ログイン成功・失敗：Supabase Dashboard の **Logs → Auth** で確認
-- 未認証 `/dashboard` アクセス：middleware が静かにリダイレクト（ログ不要、Phase 7 で Sentry 追加予定）
+
+| 項目 | 確認場所 |
+|---|---|
+| ログイン成功・失敗 | Supabase Dashboard > Logs > Auth |
+| 投稿成功・失敗 | `posts` / `post_targets` テーブル |
+| OAuth 認可 | `sns_accounts` の作成・更新タイムスタンプ |
+| 拡張機能 SW ログ | `chrome://extensions/` の拡張ページの「サービスワーカー」リンク |
+
+Phase 7-1 で Sentry を導入予定（フロント+API のエラートラッキング）。
 
 ---
 
-## 既知の制限（Phase 2-1 のスコープ外）
-- パスワードリセットフロー（メール送信）→ Phase 2-2 以降
-- 確認メール（email_confirm）→ Supabase Dashboard で OFF にして即サインアップ可能にする想定
-- OAuth（Google / GitHub / SNS）→ Phase 4 で SNS 投稿用に追加
-- 2FA → Phase 8 ベータ前
-- 監査ログテーブル → Phase 3
+## 既知の制限・対処
+
+| 項目 | 状態 |
+|---|---|
+| Supabase Free プランの確認メール強制 ON | ✅ admin.createUser で迂回 |
+| Supabase Free プランの SMTP レート制限（1時間 数通） | ✅ admin.createUser で完全回避（メール送信なし） |
+| MV3 SW から Cookie 認証 API への呼び出し不可 | ✅ dom_selectors は anon 可に / 結果通知は Web ページ経由 |
+| パスワードリセットメール | ⚠️ 動作するはずだが運用未検証（Site URL 修正済み） |
+| 2FA | 未実装（Phase 8 ベータ前に検討） |
+| 監査ログテーブル | 未実装（Phase 7） |
+
+---
+
+## 連絡先
+
+セキュリティに関する報告 / 質問は、リポジトリの GitHub Issue（private）または直接連絡。
