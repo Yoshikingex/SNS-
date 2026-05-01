@@ -15,7 +15,8 @@ export default async function DashboardPage() {
   return (
     <main className="mx-auto max-w-md min-h-screen px-4 py-12 space-y-6">
       <header className="space-y-2">
-        <h1 className="text-3xl font-bold">Dashboard</h1>
+        <h1 className="text-3xl font-bold">Matomell</h1>
+        <p className="text-xs text-gray-500">マルチSNS同時投稿システム</p>
         <p className="text-sm text-gray-600">ログイン中: {user.email}</p>
       </header>
 

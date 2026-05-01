@@ -1,6 +1,8 @@
-# 投稿一括統合システム (post-integration-system)
+# Matomell (マトメル) - マルチSNS同時投稿システム
 
-マルチSNS同時投稿SaaSのモノレポ。
+X / Bluesky / リラクシィー / 02 への投稿を、ひとつの画面から一括で送信できる SaaS。
+
+PWA 対応：スマホでも「ホーム画面に追加」でアプリ風に使えます。Chrome 拡張機能でリラクシィー / 02 への自動投稿にも対応。
 
 ## 構成
 
@@ -665,10 +667,79 @@ Supabase Dashboard → SQL Editor で [supabase/migrations/0005_dom_selectors_re
 - リラクシィー: **330**（rx-sns.jp の textarea maxlength から確定）
 - 02: **280**（m-sns.net の表示「0/280」から確定）
 
+## PWA（スマホでアプリ風に使う）
+
+### 仕組み
+- `apps/web/app/manifest.ts` で PWA 用マニフェスト定義
+- `apps/web/app/icon.tsx` `apple-icon.tsx` で Next.js ImageResponse によるアイコン動的生成
+- インストール: スマホブラウザ（iOS Safari / Android Chrome）で開いて「ホーム画面に追加」 → アプリアイコンとして起動
+
+### スマホ対応の機能マトリクス
+| プラットフォーム | スマホでの自動度 |
+|---|---|
+| X (Twitter) | ✅ 完全自動（API 経由） |
+| Bluesky | ✅ 完全自動（API 経由） |
+| リラクシィー | ⚠️ コピペ手動（5秒）|
+| 02 | ⚠️ コピペ手動（5秒）|
+
+→ スマホでも X/Bluesky は完全自動、業界SNS は実装済のコピペ UI で5秒手動。
+
+## Vercel 本番公開（Chrome Web Store 申請に必要）
+
+### 1. Vercel 環境変数を本番にも登録
+Vercel Dashboard → プロジェクト「post-integration-system」 → Settings → Environment Variables → 以下7つを **Production / Preview / Development** すべてに登録:
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `X_CLIENT_ID`
+- `X_CLIENT_SECRET`
+- `X_REDIRECT_URI` = `https://post-integration-system-frees-projects-906fc790.vercel.app/api/auth/x/callback`
+- `ENCRYPTION_KEY`
+
+### 2. X Developer Portal で本番 Callback URI を追加
+- https://developer.x.com/en/portal/projects-and-apps → アプリ → User authentication settings → Edit
+- Callback URI に追加（既存の localhost と併記）:
+  - `https://post-integration-system-frees-projects-906fc790.vercel.app/api/auth/x/callback`
+
+### 3. Vercel で再デプロイ
+Deployments タブ → 最新 → ⋯ → Redeploy
+
+### 4. 本番 URL で動作確認
+- https://post-integration-system-frees-projects-906fc790.vercel.app/login
+- ログイン → 連携 → 投稿テスト
+
+## Chrome Web Store 申請（誰でも 1 クリックインストール）
+
+### 1. Google Chrome Web Store 開発者アカウント登録（一回限り $5）
+- https://chrome.google.com/webstore/devconsole/
+- Google アカウントでログイン → 開発者として登録 → カード払いで $5
+
+### 2. ストア素材を準備
+- **アプリ名**: Matomell - マルチSNS同時投稿
+- **説明文（短）**: 130 文字以内、日本語
+- **説明文（長）**: 詳細な機能説明
+- **アイコン**: 128×128 PNG（私がデザイン案を提案）
+- **スクリーンショット**: 1280×800 PNG を 1〜5 枚（Web 画面 + 拡張ポップアップ）
+- **プライバシーポリシー URL**: `https://post-integration-system-frees-projects-906fc790.vercel.app/privacy` （これも作成必要）
+- **ホームページ URL**: 本番 Vercel URL
+
+### 3. ZIP をアップロード
+```powershell
+cd "c:\Users\iwaiy\OneDrive\デスクトップ\業務効率化システム\水商売システム\投稿一括統合システム"
+pnpm --filter extension build
+# apps/extension/dist/ を ZIP 化（右クリック → 圧縮 / または PowerShell:）
+Compress-Archive -Path "apps/extension/dist/*" -DestinationPath "apps/extension/matomell-extension.zip" -Force
+```
+
+開発者ダッシュボードで「アイテムを追加」→ ZIP アップロード → ストア素材入力 → 公開申請
+
+### 4. レビュー
+- 初回審査: 3〜10営業日
+- 承認後: Chrome Web Store URL でシェア可能（誰でも1クリックインストール）
+
 ## 注意
 
-- 本リポジトリは Phase 6 後編（実 URL + コピペ UI）の状態。
+- 本リポジトリは Phase 6 後編（実 URL + コピペ UI + PWA + Web Store 準備中）の状態。
 - エラーUI / Sentry / 課金制限 は未設定。後続フェーズで追加予定。
-- リラクシィー / 02 の自動投稿は dom_selectors テーブルに依存。Phase 5-4 の chrome.alarms で60秒以内に追従。
 #   S N S -  
  

@@ -6,12 +6,13 @@ import { defineManifest } from "@crxjs/vite-plugin";
 // host_permissions に Web 側ドメインも含める（background から PATCH するため）。
 export default defineManifest({
   manifest_version: 3,
-  name: "投稿一括統合システム",
-  description: "マルチSNS投稿のためのブラウザ拡張",
+  name: "Matomell - マルチSNS同時投稿",
+  description:
+    "Matomell：X / Bluesky / リラクシィー / 02 への投稿をひとつの画面から一括で送信できる、マルチSNS同時投稿システムの公式ブラウザ拡張。",
   version: "0.0.1",
   action: {
     default_popup: "src/popup/index.html",
-    default_title: "投稿一括統合システム"
+    default_title: "Matomell"
   },
   background: {
     service_worker: "src/background.ts",
